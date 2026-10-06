@@ -40,14 +40,6 @@ jobs:
             os: linux
             arch: arm64
             backend: vulkan
-          - runner: macos-15
-            os: macos
-            arch: arm64
-            backend: metal
-          - runner: macos-15-intel
-            os: macos
-            arch: x64
-            backend: metal
     steps:
       - uses: actions/checkout@v4
         with:
@@ -159,24 +151,18 @@ jobs:
             -DGGML_OPENMP=OFF -DGGML_CCACHE=OFF
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Configure Unix runtime
-        if: runner.os != 'Windows'
+      - name: Configure Linux runtime
+        if: runner.os == 'Linux'
         shell: bash
         env:
           TARGET_ARCH: ${{ matrix.arch }}
-          TARGET_OS: ${{ matrix.os }}
         run: |
           args=(-DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_IS_DEV=OFF
             -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF
             -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DBUILD_SHARED_LIBS=ON
-            -DGGML_OPENMP=OFF -DGGML_CCACHE=OFF)
-          if [[ "$TARGET_OS" == linux ]]; then
-            args+=(-DGGML_VULKAN=ON -DGGML_METAL=OFF '-DCMAKE_BUILD_RPATH=$ORIGIN' '-DCMAKE_INSTALL_RPATH=$ORIGIN'
-              "-DVulkan_INCLUDE_DIR=$VULKAN_HEADERS_PREFIX/include" "-DCMAKE_PREFIX_PATH=$VULKAN_HEADERS_PREFIX")
-          else
-            args+=(-DGGML_VULKAN=OFF -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON
-              -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 '-DCMAKE_BUILD_RPATH=@loader_path' '-DCMAKE_INSTALL_RPATH=@loader_path')
-          fi
+            -DGGML_OPENMP=OFF -DGGML_CCACHE=OFF
+            -DGGML_VULKAN=ON -DGGML_METAL=OFF '-DCMAKE_BUILD_RPATH=$ORIGIN' '-DCMAKE_INSTALL_RPATH=$ORIGIN'
+            "-DVulkan_INCLUDE_DIR=$VULKAN_HEADERS_PREFIX/include" "-DCMAKE_PREFIX_PATH=$VULKAN_HEADERS_PREFIX")
           if [[ "$TARGET_ARCH" == x64 ]]; then
             args+=(-DGGML_CPU_ALL_VARIANTS=ON)
           else
@@ -216,50 +202,29 @@ jobs:
           New-Item -ItemType Directory -Path 'release' -Force | Out-Null
           Compress-Archive -Path 'stage/*' -DestinationPath "release/$env:ASSET"
 
-      - name: Package Unix runtime
-        if: runner.os != 'Windows'
+      - name: Package Linux runtime
+        if: runner.os == 'Linux'
         shell: bash
         env:
-          TARGET_OS: ${{ matrix.os }}
           ASSET: whisper-cpp-v1.9.4-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.backend }}.tar.gz
         run: |
           mkdir -p stage/bin release
           cp -a build/bin/. stage/bin/
           cp source/LICENSE stage/LICENSE-whisper.cpp
           # The vendored ggml tree shares the root ggml authors MIT license.
-          if [[ "$TARGET_OS" == linux ]]; then
-            # Bundle non-glibc runtime dependencies so no apt install is required.
-            for library in libstdc++.so.6 libgcc_s.so.1 libvulkan.so.1; do
-              library_path=$(ldconfig -p | awk -v wanted="$library" '$1 == wanted { print $NF; exit }')
-              test -n "$library_path"
-              cp -L "$library_path" "stage/bin/$library"
-            done
-            for binary in stage/bin/whisper-cli stage/bin/*.so*; do
-              if [[ -f "$binary" && ! -L "$binary" ]]; then patchelf --set-rpath '$ORIGIN' "$binary"; fi
-            done
-            mkdir -p stage/licenses
-            for package in libstdc++6 libgcc-s1 libvulkan1; do
-              cp "/usr/share/doc/$package/copyright" "stage/licenses/$package-copyright"
-            done
-          else
-            # Make the Mach-O dependency graph relocatable, including dynamic
-            # backend modules, rather than relying on the build directory.
-            for binary in stage/bin/*; do
-              [[ -f "$binary" && ! -L "$binary" ]] || continue
-              file "$binary" | grep -q 'Mach-O' || continue
-              if [[ "$binary" == *.dylib ]]; then install_name_tool -id "@rpath/$(basename "$binary")" "$binary"; fi
-              while IFS= read -r dependency; do
-                library_name=$(basename "$dependency")
-                if [[ "$dependency" == /* && -f "stage/bin/$library_name" ]]; then
-                  install_name_tool -change "$dependency" "@rpath/$library_name" "$binary"
-                fi
-              done < <(otool -L "$binary" | tail -n +2 | awk '{print $1}')
-              if ! otool -l "$binary" | awk '/path @loader_path / { found=1 } END { exit !found }'; then
-                install_name_tool -add_rpath '@loader_path' "$binary"
-              fi
-              codesign --force --sign - "$binary"
-            done
-          fi
+          # Bundle non-glibc runtime dependencies so no apt install is required.
+          for library in libstdc++.so.6 libgcc_s.so.1 libvulkan.so.1; do
+            library_path=$(ldconfig -p | awk -v wanted="$library" '$1 == wanted && !found { print $NF; found=1 }')
+            test -n "$library_path"
+            cp -L "$library_path" "stage/bin/$library"
+          done
+          for binary in stage/bin/whisper-cli stage/bin/*.so*; do
+            if [[ -f "$binary" && ! -L "$binary" ]]; then patchelf --set-rpath '$ORIGIN' "$binary"; fi
+          done
+          mkdir -p stage/licenses
+          for package in libstdc++6 libgcc-s1 libvulkan1; do
+            cp "/usr/share/doc/$package/copyright" "stage/licenses/$package-copyright"
+          done
           # Smoke the packaged CLI only; no model, GPU inference, or media is run.
           mv build/bin build/bin-before-smoke
           stage/bin/whisper-cli --help
@@ -294,6 +259,6 @@ jobs:
           if ! gh release view "$WHISPER_RUNTIME_TAG" >/dev/null 2>&1; then
             gh release create "$WHISPER_RUNTIME_TAG" --target "$GITHUB_SHA" \
               --title 'Whisper native runtime 1.9.4' \
-              --notes 'Project-built whisper.cpp 1.9.4: Windows/Linux Vulkan for AMD, Intel and NVIDIA; macOS Metal; dynamic CPU fallback. Linux x64 requires glibc 2.35+, ARM64 requires glibc 2.39+. Windows ARM64 uses the separately checksum-pinned upstream CPU runtime. Models are downloaded separately.'
+              --notes 'Project-built whisper.cpp 1.9.4: Windows/Linux Vulkan for AMD, Intel and NVIDIA; dynamic CPU fallback. Linux x64 requires glibc 2.35+, ARM64 requires glibc 2.39+. Windows ARM64 uses the separately checksum-pinned upstream CPU runtime. Models are downloaded separately.'
           fi
           gh release upload "$WHISPER_RUNTIME_TAG" whisper-cpp-* SHA256SUMS --clobber
