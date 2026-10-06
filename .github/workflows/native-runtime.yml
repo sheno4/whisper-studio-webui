@@ -62,7 +62,34 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build glslc libvulkan-dev spirv-headers patchelf
+          sudo apt-get install -y cmake ninja-build libvulkan-dev patchelf python3
+          if apt-cache show glslc >/dev/null 2>&1; then
+            sudo apt-get install -y glslc
+          fi
+
+      - uses: actions/checkout@v4
+        if: runner.os == 'Linux' && matrix.arch == 'x64'
+        with:
+          repository: google/shaderc
+          ref: v2026.4
+          path: sdk/shaderc
+          persist-credentials: false
+
+      - name: Prepare shader compiler on Ubuntu 22.04
+        if: runner.os == 'Linux' && matrix.arch == 'x64'
+        shell: bash
+        run: |
+          # Jammy has no glslc package. Build the pinned official compiler and
+          # its revision-pinned dependencies without changing the glibc base.
+          if ! command -v glslc >/dev/null; then
+            (cd sdk/shaderc && python3 utils/git-sync-deps)
+            cmake -S sdk/shaderc -B sdk/build-shaderc -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release -DSHADERC_SKIP_TESTS=ON \
+              -DSHADERC_SKIP_EXAMPLES=ON -DSHADERC_SKIP_COPYRIGHT_CHECK=ON \
+              -DSHADERC_ENABLE_WERROR_COMPILE=OFF
+            cmake --build sdk/build-shaderc --target glslc --parallel 4
+            printf '%s\n' "$GITHUB_WORKSPACE/sdk/build-shaderc/glslc" >> "$GITHUB_PATH"
+          fi
 
       # Ubuntu's loader can stay compatible with its glibc baseline while newer
       # header-only SDK components supply extensions used by whisper.cpp.
@@ -178,7 +205,7 @@ jobs:
           if (-not $crt) { throw 'Cannot locate the Microsoft CRT redist directory' }
           Get-ChildItem -Path (Join-Path $crt.FullName 'x64/Microsoft.VC*.CRT/*.dll') | Copy-Item -Destination $bin.FullName
           Copy-Item -LiteralPath 'source/LICENSE' -Destination 'stage/LICENSE-whisper.cpp'
-          Copy-Item -LiteralPath 'source/ggml/LICENSE' -Destination 'stage/LICENSE-ggml'
+          # whisper.cpp includes ggml under the root ggml authors MIT license.
           @{
             version = '1.9.4'; backend = 'vulkan'; architecture = 'x64'
             source = 'https://github.com/ggml-org/whisper.cpp/tree/v1.9.4'
@@ -199,7 +226,7 @@ jobs:
           mkdir -p stage/bin release
           cp -a build/bin/. stage/bin/
           cp source/LICENSE stage/LICENSE-whisper.cpp
-          cp source/ggml/LICENSE stage/LICENSE-ggml
+          # The vendored ggml tree shares the root ggml authors MIT license.
           if [[ "$TARGET_OS" == linux ]]; then
             # Bundle non-glibc runtime dependencies so no apt install is required.
             for library in libstdc++.so.6 libgcc_s.so.1 libvulkan.so.1; do
