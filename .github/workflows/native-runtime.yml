@@ -1,0 +1,272 @@
+name: Native transcription runtimes
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/native-runtime.yml
+      - scripts/whisper-cpp-runtime.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whisper-native-v1.9.4
+  cancel-in-progress: false
+
+env:
+  WHISPER_SOURCE_REF: v1.9.4
+  WHISPER_RUNTIME_TAG: whisper-runtime-v1.9.4
+
+jobs:
+  build:
+    name: ${{ matrix.os }} ${{ matrix.arch }} ${{ matrix.backend }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2022
+            os: windows
+            arch: x64
+            backend: vulkan
+          - runner: ubuntu-22.04
+            os: linux
+            arch: x64
+            backend: vulkan
+          - runner: ubuntu-24.04-arm
+            os: linux
+            arch: arm64
+            backend: vulkan
+          - runner: macos-15
+            os: macos
+            arch: arm64
+            backend: metal
+          - runner: macos-15-intel
+            os: macos
+            arch: x64
+            backend: metal
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ggml-org/whisper.cpp
+          ref: ${{ env.WHISPER_SOURCE_REF }}
+          path: source
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install Linux build tools
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build glslc libvulkan-dev spirv-headers patchelf
+
+      # Ubuntu's loader can stay compatible with its glibc baseline while newer
+      # header-only SDK components supply extensions used by whisper.cpp.
+      - uses: actions/checkout@v4
+        if: runner.os == 'Linux'
+        with:
+          repository: KhronosGroup/Vulkan-Headers
+          ref: vulkan-sdk-1.4.363.0
+          path: sdk/vulkan-headers
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        if: runner.os == 'Linux'
+        with:
+          repository: KhronosGroup/Vulkan-Hpp
+          ref: v1.4.363
+          path: sdk/vulkan-hpp
+          persist-credentials: false
+
+      - uses: actions/checkout@v4
+        if: runner.os == 'Linux'
+        with:
+          repository: KhronosGroup/SPIRV-Headers
+          ref: vulkan-sdk-1.4.363.0
+          path: sdk/spirv-headers
+          persist-credentials: false
+
+      - name: Prepare Linux Vulkan headers
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sdk="$RUNNER_TEMP/vulkan-headers"
+          cmake -S sdk/vulkan-headers -B sdk/build-vulkan -DCMAKE_INSTALL_PREFIX="$sdk" -DVULKAN_HEADERS_ENABLE_TESTS=OFF
+          cmake --install sdk/build-vulkan
+          cp -a sdk/vulkan-hpp/vulkan/. "$sdk/include/vulkan/"
+          cmake -S sdk/spirv-headers -B sdk/build-spirv -DCMAKE_INSTALL_PREFIX="$sdk" -DSPIRV_HEADERS_ENABLE_TESTS=OFF
+          cmake --install sdk/build-spirv
+          printf 'VULKAN_HEADERS_PREFIX=%s\n' "$sdk" >> "$GITHUB_ENV"
+
+      - name: Install Windows Vulkan SDK
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Invoke-RestMethod 'https://vulkan.lunarg.com/sdk/latest/windows.json').windows
+          if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw 'Invalid LunarG SDK version' }
+          $installer = Join-Path $env:RUNNER_TEMP "vulkansdk-windows-X64-$version.exe"
+          $sdk = Join-Path $env:RUNNER_TEMP "VulkanSDK-$version"
+          Invoke-WebRequest "https://vulkan.lunarg.com/sdk/download/$version/windows/vulkansdk-windows-X64-$version.exe?Human=true" -OutFile $installer
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'Valid') { throw 'The Vulkan SDK signature is invalid' }
+          $install = Start-Process -FilePath $installer -ArgumentList @('--root', $sdk, '--accept-licenses', '--default-answer', '--confirm-command', 'install', 'copy_only=1') -WindowStyle Hidden -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Vulkan SDK installation failed: $($install.ExitCode)" }
+          if (-not (Test-Path (Join-Path $sdk 'Bin/glslc.exe'))) { throw 'The Vulkan SDK did not install glslc' }
+          "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
+          (Join-Path $sdk 'Bin') >> $env:GITHUB_PATH
+
+      - name: Configure Windows runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S source -B build -A x64 `
+            -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_IS_DEV=OFF `
+            -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF `
+            -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DBUILD_SHARED_LIBS=ON `
+            -DGGML_CPU_ALL_VARIANTS=ON -DGGML_VULKAN=ON -DGGML_METAL=OFF `
+            -DGGML_OPENMP=OFF -DGGML_CCACHE=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Configure Unix runtime
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          TARGET_OS: ${{ matrix.os }}
+        run: |
+          args=(-DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_IS_DEV=OFF
+            -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF
+            -DGGML_NATIVE=OFF -DGGML_BACKEND_DL=ON -DBUILD_SHARED_LIBS=ON
+            -DGGML_OPENMP=OFF -DGGML_CCACHE=OFF)
+          if [[ "$TARGET_OS" == linux ]]; then
+            args+=(-DGGML_VULKAN=ON -DGGML_METAL=OFF '-DCMAKE_BUILD_RPATH=$ORIGIN' '-DCMAKE_INSTALL_RPATH=$ORIGIN'
+              "-DVulkan_INCLUDE_DIR=$VULKAN_HEADERS_PREFIX/include" "-DCMAKE_PREFIX_PATH=$VULKAN_HEADERS_PREFIX")
+          else
+            args+=(-DGGML_VULKAN=OFF -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 '-DCMAKE_BUILD_RPATH=@loader_path' '-DCMAKE_INSTALL_RPATH=@loader_path')
+          fi
+          if [[ "$TARGET_ARCH" == x64 ]]; then
+            args+=(-DGGML_CPU_ALL_VARIANTS=ON)
+          else
+            args+=(-DGGML_CPU_ALL_VARIANTS=OFF -DGGML_CPU_ARM_ARCH=armv8-a)
+          fi
+          cmake -S source -B build -G Ninja "${args[@]}"
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Package Windows runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ASSET: whisper-cpp-v1.9.4-windows-${{ matrix.arch }}-${{ matrix.backend }}.zip
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = New-Item -ItemType Directory -Path 'stage/bin' -Force
+          Copy-Item -Path 'build/bin/Release/*' -Destination $bin.FullName -Recurse
+          if (-not (Test-Path 'stage/bin/whisper-cli.exe')) { throw 'Missing whisper-cli.exe' }
+          if (-not (Test-Path 'stage/bin/ggml-vulkan.dll')) { throw 'Missing Vulkan backend DLL' }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -property installationPath
+          $crt = Get-ChildItem -LiteralPath (Join-Path $vs 'VC/Redist/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          if (-not $crt) { throw 'Cannot locate the Microsoft CRT redist directory' }
+          Get-ChildItem -Path (Join-Path $crt.FullName 'x64/Microsoft.VC*.CRT/*.dll') | Copy-Item -Destination $bin.FullName
+          Copy-Item -LiteralPath 'source/LICENSE' -Destination 'stage/LICENSE-whisper.cpp'
+          Copy-Item -LiteralPath 'source/ggml/LICENSE' -Destination 'stage/LICENSE-ggml'
+          @{
+            version = '1.9.4'; backend = 'vulkan'; architecture = 'x64'
+            source = 'https://github.com/ggml-org/whisper.cpp/tree/v1.9.4'
+            note = 'The Vulkan backend is loaded dynamically. Missing Vulkan support falls back to CPU.'
+          } | ConvertTo-Json | Set-Content -LiteralPath 'stage/build-info.json' -Encoding utf8
+          & 'stage/bin/whisper-cli.exe' --help
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged whisper-cli cannot start' }
+          New-Item -ItemType Directory -Path 'release' -Force | Out-Null
+          Compress-Archive -Path 'stage/*' -DestinationPath "release/$env:ASSET"
+
+      - name: Package Unix runtime
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          TARGET_OS: ${{ matrix.os }}
+          ASSET: whisper-cpp-v1.9.4-${{ matrix.os }}-${{ matrix.arch }}-${{ matrix.backend }}.tar.gz
+        run: |
+          mkdir -p stage/bin release
+          cp -a build/bin/. stage/bin/
+          cp source/LICENSE stage/LICENSE-whisper.cpp
+          cp source/ggml/LICENSE stage/LICENSE-ggml
+          if [[ "$TARGET_OS" == linux ]]; then
+            # Bundle non-glibc runtime dependencies so no apt install is required.
+            for library in libstdc++.so.6 libgcc_s.so.1 libvulkan.so.1; do
+              library_path=$(ldconfig -p | awk -v wanted="$library" '$1 == wanted { print $NF; exit }')
+              test -n "$library_path"
+              cp -L "$library_path" "stage/bin/$library"
+            done
+            for binary in stage/bin/whisper-cli stage/bin/*.so*; do
+              if [[ -f "$binary" && ! -L "$binary" ]]; then patchelf --set-rpath '$ORIGIN' "$binary"; fi
+            done
+            mkdir -p stage/licenses
+            for package in libstdc++6 libgcc-s1 libvulkan1; do
+              cp "/usr/share/doc/$package/copyright" "stage/licenses/$package-copyright"
+            done
+          else
+            # Make the Mach-O dependency graph relocatable, including dynamic
+            # backend modules, rather than relying on the build directory.
+            for binary in stage/bin/*; do
+              [[ -f "$binary" && ! -L "$binary" ]] || continue
+              file "$binary" | grep -q 'Mach-O' || continue
+              if [[ "$binary" == *.dylib ]]; then install_name_tool -id "@rpath/$(basename "$binary")" "$binary"; fi
+              while IFS= read -r dependency; do
+                library_name=$(basename "$dependency")
+                if [[ "$dependency" == /* && -f "stage/bin/$library_name" ]]; then
+                  install_name_tool -change "$dependency" "@rpath/$library_name" "$binary"
+                fi
+              done < <(otool -L "$binary" | tail -n +2 | awk '{print $1}')
+              if ! otool -l "$binary" | awk '/path @loader_path / { found=1 } END { exit !found }'; then
+                install_name_tool -add_rpath '@loader_path' "$binary"
+              fi
+              codesign --force --sign - "$binary"
+            done
+          fi
+          # Smoke the packaged CLI only; no model, GPU inference, or media is run.
+          mv build/bin build/bin-before-smoke
+          stage/bin/whisper-cli --help
+          printf '%s\n' 'Built from ggml-org/whisper.cpp v1.9.4. GGML_NATIVE=OFF; GGML_BACKEND_DL=ON; CPU fallback included.' > stage/build-info.txt
+          tar -czf "release/$ASSET" -C stage .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-${{ matrix.os }}-${{ matrix.arch }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Publish verified runtime assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cd release
+          sha256sum whisper-cpp-* > SHA256SUMS
+          if ! gh release view "$WHISPER_RUNTIME_TAG" >/dev/null 2>&1; then
+            gh release create "$WHISPER_RUNTIME_TAG" --target "$GITHUB_SHA" \
+              --title 'Whisper native runtime 1.9.4' \
+              --notes 'Project-built whisper.cpp 1.9.4: Windows/Linux Vulkan for AMD, Intel and NVIDIA; macOS Metal; dynamic CPU fallback. Linux x64 requires glibc 2.35+, ARM64 requires glibc 2.39+. Windows ARM64 uses the separately checksum-pinned upstream CPU runtime. Models are downloaded separately.'
+          fi
+          gh release upload "$WHISPER_RUNTIME_TAG" whisper-cpp-* SHA256SUMS --clobber
