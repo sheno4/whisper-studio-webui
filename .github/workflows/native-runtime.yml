@@ -1,12 +1,8 @@
 name: Native transcription runtimes
 
 on:
+  # Rebuild pinned native binaries deliberately; downloader changes reuse them.
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/native-runtime.yml
-      - scripts/whisper-cpp-runtime.mjs
 
 permissions:
   contents: read

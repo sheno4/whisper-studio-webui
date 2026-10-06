@@ -66,6 +66,15 @@ export function createWhisperCppRuntime(options = {}) {
   const log = options.logger ?? console.log;
   const wait = options.wait ?? delay;
   const retries = options.retryCount ?? 3;
+  const rename = async (from, to) => {
+    for (let attempt = 0; ; attempt += 1) {
+      try { return await fs.rename(from, to); }
+      catch (error) {
+        if (platform !== 'win32' || !['EPERM', 'EBUSY', 'EACCES'].includes(error.code) || attempt >= 7) throw error;
+        await wait(250 * (attempt + 1));
+      }
+    }
+  };
   const repository = options.repository ?? DEFAULT_REPOSITORY;
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('The native runtime GitHub repository is invalid.');
   const executableName = platform === 'win32' ? 'whisper-cli.exe' : 'whisper-cli';
@@ -328,13 +337,13 @@ export function createWhisperCppRuntime(options = {}) {
       if (!await hasBackend(staged, source.variant)) throw new Error(`The runtime archive has no ${source.variant} backend library.`);
       if (!await probe(stagedExecutable, env)) throw new Error('The downloaded whisper-cli cannot start on this system. The previous installation was preserved.');
       await fs.writeFile(path.join(staged, 'runtime.json'), JSON.stringify({ version: WHISPER_CPP_VERSION, release: source.release, variant: source.variant, targetVariant: asset.variant, platform, arch }, null, 2));
-      try { await fs.rename(target, backup); movedOld = true; } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      try { await fs.rename(staged, target); }
-      catch (error) { if (movedOld) await fs.rename(backup, target); movedOld = false; throw error; }
-      if (movedOld) await fs.rm(backup, { recursive: true, force: true });
+      try { await rename(target, backup); movedOld = true; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      try { await rename(staged, target); }
+      catch (error) { if (movedOld) await rename(backup, target); movedOld = false; throw error; }
+      if (movedOld) await fs.rm(backup, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
       log(`Project-local whisper.cpp is ready (${source.variant}).`);
       return { executable, variant: source.variant };
-    } finally { await fs.rm(work, { recursive: true, force: true }); }
+    } finally { await fs.rm(work, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }); }
   };
 
   return { ensureWhisperCpp };

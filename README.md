@@ -8,7 +8,7 @@
 
 - 支持本地音视频上传和拖放
 - 支持 YouTube、Bilibili、抖音等 `yt-dlp` 可处理的媒体链接
-- 支持 `faster-whisper`（默认）和可选的 `openai-whisper`
+- 支持 `faster-whisper`、`openai-whisper` 和 `whisper.cpp`，新安装按硬件自动选择
 - 并行任务队列、实时追加任务、进度推送、取消、重试和历史记录
 - 导出 `TXT`、`SRT`、`VTT` 和 `JSON`
 - 可新增多套自定义翻译服务，启用、设为默认、编辑或删除
@@ -218,7 +218,7 @@ npm run setup     # 创建 .venv 并安装默认 Python 依赖
 
 ## 故障排查
 
-- Python 显示不可用：运行 `npm run setup`，或在设置中填写正确的解释器路径。
+- Python 显示不可用：重新运行 `start-webui.bat` 或 `sh ./start-webui.sh`；自定义解释器在设置中修正路径。
 - FFmpeg 显示不可用：重新运行启动脚本，自动修复便携工具；自定义环境需同时提供 ffmpeg 和 ffprobe。
 - 首次转写较慢：Whisper 模型正在下载和初始化。
 - CUDA 启动失败：`faster-whisper` 会尝试其他计算模式；也可以使用 CPU。
