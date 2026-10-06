@@ -1,6 +1,6 @@
 -r requirements.txt
 
-# Optional NVIDIA runtime for faster-whisper on Windows x64.
+# NVIDIA runtime for faster-whisper on Windows and Linux.
 # CTranslate2 requires CUDA 12 even when PyTorch uses CUDA 13.
-nvidia-cublas-cu12>=12.9.2.10,<13; sys_platform == "win32" and platform_machine == "AMD64"
-nvidia-cudnn-cu12>=9.25.1.1,<10; sys_platform == "win32" and platform_machine == "AMD64"
+nvidia-cublas-cu12>=12.9.2.10,<13; (sys_platform == "win32" or sys_platform == "linux") and (platform_machine == "AMD64" or platform_machine == "x86_64" or platform_machine == "aarch64")
+nvidia-cudnn-cu12>=9.25.1.1,<10; (sys_platform == "win32" or sys_platform == "linux") and (platform_machine == "AMD64" or platform_machine == "x86_64" or platform_machine == "aarch64")

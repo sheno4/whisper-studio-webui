@@ -25,9 +25,11 @@ from urllib.request import urlopen
 try:
     from .parallel_download import connection_count, parallel_http_downloads
     from .bilibili_download import bilibili_download_sources
+    from . import whisper_cpp_backend
 except ImportError:
     from parallel_download import connection_count, parallel_http_downloads
     from bilibili_download import bilibili_download_sources
+    import whisper_cpp_backend
 
 
 AUDIO_EXTENSIONS = {
@@ -121,23 +123,26 @@ def configure_faster_whisper_cuda_runtime() -> None:
     if sys.platform != "win32":
         return
 
-    # CTranslate2 uses CUDA 12 libraries, independently of PyTorch's CUDA version.
-    # Keep the handles alive: closing them removes the DLL search directories.
+    # msvc-runtime wheels place DLLs in Scripts or sys.prefix. Register these
+    # before importing any native extension, including CTranslate2 or PyTorch.
+    # Keep handles alive: closing one removes that DLL search directory.
     nvidia_dir = Path(sysconfig.get_path("purelib")) / "nvidia"
-    directories = [
-        str(nvidia_dir / package / "bin")
-        for package in ("cublas", "cudnn", "cuda_nvrtc")
-        if (nvidia_dir / package / "bin").is_dir()
-    ]
+    candidates = [Path(sys.executable).parent, Path(sys.prefix) / "Scripts", Path(sys.prefix)]
+    candidates.extend(sorted(nvidia_dir.glob("*/bin")))
+    directories = list(dict.fromkeys(str(candidate) for candidate in candidates if candidate.is_dir()))
     for directory in directories:
         if directory not in CUDA_DLL_DIRECTORY_HANDLES:
-            CUDA_DLL_DIRECTORY_HANDLES[directory] = os.add_dll_directory(directory)
+            with contextlib.suppress(OSError):
+                CUDA_DLL_DIRECTORY_HANDLES[directory] = os.add_dll_directory(directory)
     if directories:
         existing = os.environ.get("PATH", "").split(os.pathsep)
         installed = {os.path.normcase(directory) for directory in directories}
         os.environ["PATH"] = os.pathsep.join(
             directories + [entry for entry in existing if os.path.normcase(entry) not in installed]
         )
+
+
+configure_faster_whisper_cuda_runtime()
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -323,6 +328,8 @@ def is_auth_gate_error_message(text: str) -> bool:
 def classify_error(error: Exception) -> WorkerFailure:
     if isinstance(error, WorkerFailure):
         return error
+    if isinstance(error, whisper_cpp_backend.WhisperCppFailure):
+        return WorkerFailure(error.code, error.message, error.details)
 
     text = str(error)
     lowered = text.lower()
@@ -483,6 +490,10 @@ def env_check() -> None:
         ytdlp_ok = False
 
     js_runtimes = detect_js_runtimes()
+    cpp_runtime = whisper_cpp_backend.inspect_runtime(
+        model_name=os.environ.get("WHISPER_MODEL", "turbo")
+        if os.environ.get("WHISPER_ENGINE") == "whisper.cpp" else None,
+    )
 
     print(
         json.dumps(
@@ -497,6 +508,7 @@ def env_check() -> None:
                 "fasterWhisperPath": faster_whisper_path,
                 "ytDlpVersion": ytdlp_version,
                 "ytDlpJsRuntimes": list(js_runtimes.keys()),
+                **cpp_runtime,
             },
             ensure_ascii=False,
         )
@@ -2694,7 +2706,8 @@ def transcribe_with_faster_whisper(
     from faster_whisper.utils import download_model  # type: ignore
 
     last_error: Exception | None = None
-    total_memory_mb = query_nvidia_gpu_total_memory_mb()
+    cpu_only = os.environ.get("WHISPER_DEVICE", "").strip().lower() == "cpu"
+    total_memory_mb = None if cpu_only else query_nvidia_gpu_total_memory_mb()
     candidates = (
         [
             ("cuda", "float16"),
@@ -2772,13 +2785,15 @@ def transcribe_with_openai_whisper_optimized(
     import whisper  # type: ignore
 
     whisper_transcribe_module = importlib.import_module("whisper.transcribe")
-    model = OPENAI_WHISPER_MODEL_CACHE.get(model_name)
+    cpu_only = os.environ.get("WHISPER_DEVICE", "").strip().lower() == "cpu"
+    cache_key = model_name + (":cpu" if cpu_only else ":auto")
+    model = OPENAI_WHISPER_MODEL_CACHE.get(cache_key)
     if model is None:
         progress("transcribing", f"Loading openai-whisper model: {model_name}", 0)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            model = whisper.load_model(model_name)
+            model = whisper.load_model(model_name, device="cpu") if cpu_only else whisper.load_model(model_name)
         OPENAI_WHISPER_MODEL_CACHE.clear()
-        OPENAI_WHISPER_MODEL_CACHE[model_name] = model
+        OPENAI_WHISPER_MODEL_CACHE[cache_key] = model
 
     use_fp16 = str(getattr(model, "device", "cpu")).startswith("cuda")
     log(
@@ -2811,8 +2826,15 @@ def transcribe_audio(
 ) -> dict[str, Any]:
     if engine == "faster-whisper":
         return transcribe_with_faster_whisper(audio_path, model_name, language)
-
-    return transcribe_with_openai_whisper_optimized(audio_path, model_name, language)
+    if engine == "whisper.cpp":
+        return whisper_cpp_backend.transcribe(
+            audio_path, model_name, language,
+            progress_callback=lambda message, percent: progress("transcribing", message, percent),
+            log_callback=lambda level, message: log(level, message, "transcription"),
+        )
+    if engine == "whisper":
+        return transcribe_with_openai_whisper_optimized(audio_path, model_name, language)
+    raise WorkerFailure("transcription_engine_invalid", f"不支持的转写引擎：{engine}")
 
 
 def process_task(request: dict[str, Any]) -> None:

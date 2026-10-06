@@ -1,0 +1,6 @@
+# Downloads and browser capture shared by all transcription backends.
+yt-dlp[default]>=2026.8.19
+requests>=2.34.2,<3
+websocket-client>=1.9.2,<2
+# App-local MSVC libraries; no administrator or global redistributable installer.
+msvc-runtime>=14.44.35112; sys_platform == "win32"

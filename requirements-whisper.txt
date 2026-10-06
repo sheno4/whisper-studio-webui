@@ -1,4 +1,4 @@
--r requirements.txt
+-r requirements-common.txt
 
 # Optional legacy openai-whisper backend. This also installs PyTorch.
 torch>=2.14,<3

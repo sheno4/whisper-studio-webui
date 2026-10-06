@@ -12,7 +12,7 @@ export type TaskStatus =
 export type TaskSourceType = 'link' | 'file';
 export type LogLevel = 'debug' | 'info' | 'warning' | 'error';
 export type ApiKeySource = 'env' | 'stored' | 'none';
-export type TranscriptionEngine = 'whisper' | 'faster-whisper';
+export type TranscriptionEngine = 'whisper' | 'faster-whisper' | 'whisper.cpp';
 export type TranscriptionLanguage =
   | 'auto'
   | 'zh'

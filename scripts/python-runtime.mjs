@@ -8,7 +8,7 @@ export const getVenvPython = (projectRoot) => path.join(
   process.platform === 'win32' ? 'python.exe' : 'python'
 );
 
-export const canRunPython = (command, args = []) => {
+export const canRunPython = (command, args = [], env = process.env) => {
   const result = spawnSync(command, [
     ...args,
     '-c',
@@ -17,6 +17,7 @@ export const canRunPython = (command, args = []) => {
     stdio: 'ignore',
     shell: false,
     windowsHide: true,
+    env,
     timeout: 10000
   });
   return !result.error && result.status === 0;

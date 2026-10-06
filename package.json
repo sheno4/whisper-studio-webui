@@ -17,7 +17,7 @@
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "node scripts/test.mjs",
     "setup": "node scripts/setup.mjs",
-    "start": "node dist-server/server/index.js"
+    "start": "node scripts/launch.mjs"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

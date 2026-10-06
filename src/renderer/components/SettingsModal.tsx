@@ -7,7 +7,8 @@ import {
   DEFAULT_TRANSLATION_MAX_TEXT_LENGTH,
   DEFAULT_TRANSLATION_REQUEST_LIMIT,
   DEFAULT_TRANSLATION_TEMPERATURE,
-  OPENAI_WHISPER_MODEL_OPTIONS
+  OPENAI_WHISPER_MODEL_OPTIONS,
+  WHISPER_CPP_MODEL_OPTIONS
 } from '../../shared/constants';
 import type {
   SaveSettingsPayload,
@@ -78,12 +79,14 @@ const settingsTabs: SettingsTabDefinition[] = [
 
 const transcriptionEngineOptions: Array<{ value: TranscriptionEngine; label: string }> = [
   { value: 'faster-whisper', label: 'faster-whisper' },
+  { value: 'whisper.cpp', label: 'whisper.cpp（Vulkan / CPU）' },
   { value: 'whisper', label: 'openai-whisper' }
 ];
 
 const transcriptionModelsByEngine: Record<TranscriptionEngine, readonly string[]> = {
   whisper: OPENAI_WHISPER_MODEL_OPTIONS,
-  'faster-whisper': FASTER_WHISPER_MODEL_OPTIONS
+  'faster-whisper': FASTER_WHISPER_MODEL_OPTIONS,
+  'whisper.cpp': WHISPER_CPP_MODEL_OPTIONS
 };
 
 function getDefaultModelForEngine(engine: TranscriptionEngine): string {
@@ -476,6 +479,9 @@ function SettingsModal({
                 </option>
               ))}
             </select>
+            {form.transcriptionEngine === 'whisper.cpp' && (
+              <small>使用原生 GGML 模型。GPU 加速取决于系统、显卡驱动和安装的后端；无法使用时可回退 CPU。</small>
+            )}
           </label>
 
           <label className="settings-field">
@@ -490,6 +496,9 @@ function SettingsModal({
                 </option>
               ))}
             </select>
+            {form.transcriptionEngine === 'whisper.cpp' && (
+              <small>首次启动自动准备所选模型。更换为尚未下载的模型后，保存设置并重新启动以下载。</small>
+            )}
           </label>
         </div>
       </section>

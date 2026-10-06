@@ -23,6 +23,7 @@ export const runProcess = (
       cwd: options.cwd,
       env: options.env,
       windowsHide: true,
+      detached: process.platform !== 'win32',
       stdio: 'pipe'
     });
 
@@ -90,5 +91,12 @@ export const killProcessTree = async (pid?: number): Promise<void> => {
     return;
   }
 
-  process.kill(pid, 'SIGKILL');
+  try {
+    // Each worker owns its POSIX process group, including native and ffmpeg children.
+    process.kill(-pid, 'SIGKILL');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    try { process.kill(pid, 'SIGKILL'); }
+    catch (failure) { if ((failure as NodeJS.ErrnoException).code !== 'ESRCH') throw failure; }
+  }
 };

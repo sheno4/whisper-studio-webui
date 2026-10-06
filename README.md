@@ -33,17 +33,23 @@ Node.js / Express local server
 
 支持 HTTP Range 的大文件会拆成小段并行下载，逐段续传和重试，验证分段位置与大小后合并。不支持范围读取的网站会自动使用兼容下载方式；HLS/DASH 分片也采用设置的并发数量。B站会在同格式的官方主地址与备用 CDN 间小范围采样选路，失败时切换线路继续已下载的分段；B站请求显式不继承电脑 HTTP/SOCKS 代理，路由器透明代理仍由其分流规则决定。任务进度会显示传输速度、大小与预计剩余时间。并行翻译共享同一服务的请求频率限制。
 
-## 环境要求
+## 环境与硬件
 
-- Node.js 22.12 或更高版本
-- Python 3.14（推荐使用最新的 3.14.x 维护版本）
-- FFmpeg，且 `ffmpeg` 命令在 `PATH` 中
-- Chrome、Edge 或 Chromium（三者任选其一，用于抖音公开链接的免 Cookie 自动解析）
-- 可选：NVIDIA GPU 和匹配的 CUDA 运行环境
+克隆项目需要 Git 和联网；Linux 引导脚本需要系统自带的 tar、校验工具，以及 curl 或 wget。启动脚本会复用可用的本机工具，缺失时自动下载项目内的 Node.js LTS、Python 3.14、FFmpeg、Python/Node 依赖和所选模型；公开抖音解析需要的 Chromium 也会自动准备。无需提前安装 Node、Python、CUDA Toolkit 或管理员权限。显卡驱动由使用者安装；登录账号、会员权限和翻译 API Key 需要自行配置。
 
-首次运行 `faster-whisper` 会自动下载所选模型。模型不提交到 Git 仓库。
+| 系统 / 硬件 | 自动转写方案 | 运行条件 |
+| --- | --- | --- |
+| Windows x64 / NVIDIA | faster-whisper + CUDA 12 cuBLAS/cuDNN | Windows 10/11，兼容 CUDA 12 的 NVIDIA 驱动；失败时回退 CPU |
+| Windows x64 / AMD、Intel | whisper.cpp + Vulkan | 支持 Vulkan 的显卡和驱动；GPU 初始化失败时回退 CPU |
+| Windows ARM64 | whisper.cpp CPU | Windows 11 ARM64；浏览器使用系统 Chromium 或 x64 模拟 |
+| Linux x64 / AMD、Intel | whisper.cpp + Vulkan | 项目原生包要求 glibc 2.35+；显卡驱动提供 Vulkan ICD |
+| Linux ARM64 / AMD、Intel | whisper.cpp + Vulkan | 项目原生包要求 glibc 2.39+；Vulkan 驱动 |
+| Linux x64、ARM64 / NVIDIA | faster-whisper + CUDA | glibc 发行版、兼容驱动及对应 Python wheel |
+| 无兼容 GPU / 强制 CPU | faster-whisper CPU；Windows ARM64 用原生 CPU | 首次安装自动按内存选择模型 |
 
-Windows 启动脚本优先使用项目内 `.runtime/node/node.exe`；服务端和 Python 子进程优先使用 `.runtime/ffmpeg/bin` 中的 FFmpeg。没有项目内工具时，仍使用系统 PATH。当前本机已部署 Node.js 26.8.1、npm 12.0.2 和 FFmpeg 9.0.1。
+自动下载覆盖上述 x64/ARM64 平台。Alpine/musl、32 位及其他架构需要自行提供兼容工具。Linux 的桌面浏览器仍依赖发行版的基础图形库；缺库时显示具体错误，核心转写可以继续。已保存的引擎和模型会保留；新安装才自动选择硬件方案。AMD/Intel 使用 Vulkan，无需安装 PyTorch ROCm。
+
+工具安装在 `.runtime`、Python 包安装在 `.venv`，不会修改全局 PATH 或注册表。首次下载模型可能需要数分钟，并占用数百 MB 至数 GB；后续启动复用本地内容。下载中断后重新启动即可重试。
 
 ## 快速开始
 
@@ -55,12 +61,14 @@ cd whisper-studio-webui
 .\start-webui.bat
 ```
 
-也可以在资源管理器中双击 `start-webui.bat`。它会在需要时自动执行 `npm install`、创建 `.venv`、构建生产版本，然后启动并打开 [http://127.0.0.1:4317](http://127.0.0.1:4317)。再次启动时会复用已经安装和构建的内容。
+也可以在资源管理器中双击 `start-webui.bat`。首次自动准备环境、模型、构建生产版本，然后打开 [http://127.0.0.1:4317](http://127.0.0.1:4317)。之后会检测依赖是否完整；`git pull` 更新依赖或源码后，自动安装所需变更并重新构建。
 
-macOS、Linux 或希望使用命令行的用户：
+Linux：
 
 ```bash
-npm run launch
+git clone https://github.com/sheno4/whisper-studio-webui.git
+cd whisper-studio-webui
+sh ./start-webui.sh
 ```
 
 开发模式仍可手动运行：
@@ -73,19 +81,18 @@ npm run dev
 
 然后打开 [http://127.0.0.1:5173](http://127.0.0.1:5173)。
 
-启动脚本支持以下可选参数：
+启动脚本支持以下可选参数；`npm run launch --` 和 `npm run setup --` 也可传入环境参数：
 
-- `--rebuild`：强制重新构建；
-- `--no-browser`：启动后不自动打开浏览器；
-- `--skip-setup`：跳过 Python 环境初始化，仅供已手动配置 `WHISPER_PYTHON_PATH` 时使用。
+- `--cpu`：本次启动强制 CPU，避免 GPU 库安装；
+- `--backend=whisper.cpp`：选择原生后端，也可指定 `faster-whisper`、`whisper`；
+- `--model=tiny`：指定并保存模型；不传时保留已有设置或自动选择；
+- `--setup-only`：完成环境、模型和构建后退出；
+- `--skip-model`：暂不下载模型，首次转写可能需要下载；原生后端需再次 setup；
+- `--repair`：重新安装依赖；`--rebuild`：强制重建应用；
+- `--no-browser`：启动后不打开界面；
+- `--skip-setup`：跳过环境检查，仅适用于已经手动准备完整环境的使用者。
 
-`npm run setup` 会：
-
-1. 在项目中创建 `.venv`；已有环境无法启动时，先备份到 `.runtime/venv-backups` 再重建；
-2. 安装 `faster-whisper`、`yt-dlp`、`requests` 和轻量浏览器连接组件；设置中选择了 `whisper` 时，同时安装 `openai-whisper`；
-3. 检查 FFmpeg 是否可用。
-
-如果自动检测不到用于创建虚拟环境的 Python，可以先设置：
+已有虚拟环境无法启动时，安装器先保留到 `.runtime/venv-backups` 再重建。自定义 Python 必须可运行 Python 3.14+；若指定无效路径会提示修正，不覆盖它。可以指定创建虚拟环境的解释器：
 
 ```powershell
 $env:WHISPER_BOOTSTRAP_PYTHON="C:\Path\To\python.exe"
@@ -138,21 +145,23 @@ Copy-Item .env.example .env
 .\.venv\Scripts\python.exe -m pip install -r requirements-whisper.txt
 ```
 
-macOS/Linux 使用 `.venv/bin/python`。
+Linux 使用 `.venv/bin/python`。
 
-### Windows NVIDIA 加速
+### NVIDIA 加速
 
-`faster-whisper` 使用 CUDA 12 的 cuBLAS 和 cuDNN 9，独立于 PyTorch 自带的 CUDA。可通过以下命令安装；worker 会自动发现虚拟环境中的 DLL，无需修改系统 PATH：
+检测到 NVIDIA 时会自动安装 `faster-whisper` 所需的 CUDA 12 cuBLAS 和 cuDNN 9，它们独立于 PyTorch 的 CUDA。也可手动指定安装；worker 会自动发现项目中的运行库：
 
 ```powershell
 npm run setup -- --with-faster-cuda
 ```
 
-本机的 `openai-whisper` 已安装 PyTorch 2.14.0 的 CUDA 13 构建。重新安装该 GPU 构建时使用官方索引：
+`openai-whisper` 是可选后端，PyTorch GPU 构建取决于系统和硬件；建议新安装优先使用自动选择的后端。
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install --upgrade "torch==2.14.0+cu130" --index-url https://download.pytorch.org/whl/cu130
-```
+### AMD 和 Intel
+
+在设置中选择 `whisper.cpp`，然后重新运行启动脚本，或直接传 `--backend=whisper.cpp`。安装器下载项目预编译的原生运行包与经 SHA256 校验的 GGML 模型。模型包括 tiny/base/small/medium、large-v1/v2/v3 和 turbo，支持 `.en` 的模型限英语；distil 模型属于 faster-whisper，不能用于原生后端。
+
+原生包通过本仓库 GitHub Actions 从官方 whisper.cpp 源码构建。当前仓库为私有仓库，克隆及下载这些包需要仓库权限；安装器可复用 Git Credential Manager、`gh` 登录，或读取 `WHISPER_GITHUB_TOKEN`。无法访问项目 GPU 包时，Windows/Linux 尝试官方 CPU 包。显式选择原生后端且没有兼容包时会说明错误。可用 `WHISPER_CPP_PATH` 指定自己的 CLI，`WHISPER_CPP_MODEL_DIR` 指定 GGML 模型目录。
 
 ### Cookie
 
@@ -210,10 +219,10 @@ npm run setup     # 创建 .venv 并安装默认 Python 依赖
 ## 故障排查
 
 - Python 显示不可用：运行 `npm run setup`，或在设置中填写正确的解释器路径。
-- FFmpeg 显示不可用：安装 FFmpeg，并重启终端或服务。
+- FFmpeg 显示不可用：重新运行启动脚本，自动修复便携工具；自定义环境需同时提供 ffmpeg 和 ffprobe。
 - 首次转写较慢：Whisper 模型正在下载和初始化。
 - CUDA 启动失败：`faster-whisper` 会尝试其他计算模式；也可以使用 CPU。
-- 抖音公开链接解析失败：确认已安装 Chrome、Edge 或 Chromium；非标准位置可设置 `WHISPER_CHROMIUM_PATH`。
+- 抖音公开链接解析失败：重新启动以自动准备 Chromium；Linux 若提示缺少共享库，需要按发行版安装浏览器基础库。非标准位置可设置 `WHISPER_CHROMIUM_PATH`。
 - 其他链接下载失败：升级 `yt-dlp`，并检查站点是否要求登录或 Cookie。
 - 翻译未执行：在设置页添加并启用自定义翻译服务，然后将其设为默认。
 

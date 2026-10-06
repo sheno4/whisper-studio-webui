@@ -171,7 +171,8 @@ const normalizeSettings = (raw: Record<string, unknown> | undefined): PersistedS
       ? raw.youtubeCookieSource as SettingsData['youtubeCookieSource'] : 'auto',
     youtubeBrowserProfile: storedOptionalString(raw?.youtubeBrowserProfile),
     whisperModel: storedString(raw?.whisperModel, defaults.whisperModel),
-    transcriptionEngine: raw?.transcriptionEngine === 'whisper' ? 'whisper' : 'faster-whisper',
+    transcriptionEngine: raw?.transcriptionEngine === 'whisper' || raw?.transcriptionEngine === 'whisper.cpp'
+      ? raw.transcriptionEngine : 'faster-whisper',
     wallpaperPath: storedOptionalString(raw?.wallpaperPath),
     translateByDefault: storedBoolean(raw?.translateByDefault, defaults.translateByDefault),
     translationServices: services,

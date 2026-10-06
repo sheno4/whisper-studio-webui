@@ -40,6 +40,8 @@ export const FASTER_WHISPER_MODEL_OPTIONS = [
   'large-v3-turbo',
   'turbo'
 ] as const;
+// whisper.cpp uses GGML models; CTranslate2 distil models are not interchangeable.
+export const WHISPER_CPP_MODEL_OPTIONS = OPENAI_WHISPER_MODEL_OPTIONS;
 export const DEFAULT_LOG_LEVEL = 'info';
 export const DEFAULT_TRANSLATION_REQUEST_LIMIT = 2;
 export const DEFAULT_TRANSLATION_MAX_TEXT_LENGTH = 3600;

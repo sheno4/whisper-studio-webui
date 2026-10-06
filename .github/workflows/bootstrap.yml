@@ -1,0 +1,141 @@
+name: Linux first-start bootstrap
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/bootstrap.yml
+      - start-webui.sh
+      - scripts/bootstrap-state.mjs
+      - scripts/setup.mjs
+      - scripts/launch.mjs
+      - scripts/runtime-env.cjs
+      - scripts/python-runtime.mjs
+      - scripts/python-libraries.mjs
+      - scripts/hardware.mjs
+      - scripts/portable-tools.mjs
+      - scripts/browser-runtime.mjs
+      - requirements*.txt
+      - .python-version
+      - package.json
+      - package-lock.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-bootstrap-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  first-start:
+    name: Fresh Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    env:
+      # Exercise downloads even when the runner has suitable global tools.
+      # No cache action is used: each job starts with an empty checkout.
+      WHISPER_PORTABLE_ONLY: '1'
+      WHISPER_DEVICE: cpu
+      HF_HOME: ${{ github.workspace }}/.runtime/cache/huggingface
+      HF_HUB_CACHE: ${{ github.workspace }}/.runtime/cache/huggingface/hub
+      XDG_CACHE_HOME: ${{ github.workspace }}/.runtime/cache
+      PIP_CACHE_DIR: ${{ github.workspace }}/.runtime/pip-cache
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+      EXPECTED_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Require a fresh project environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for directory in .runtime .venv .data node_modules dist dist-server; do
+            if [[ -e "$directory" || -L "$directory" ]]; then
+              printf 'Cold bootstrap requires an absent %s directory.\n' "$directory" >&2
+              exit 1
+            fi
+          done
+
+      - name: Download runtimes, install dependencies, prepare tiny and build
+        shell: bash
+        run: sh ./start-webui.sh --setup-only --cpu --model=tiny --no-browser
+
+      - name: Verify the prepared environment and model
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./.runtime/node/bin/node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import { spawnSync } from 'node:child_process';
+          import { getRuntimeEnv } from './scripts/runtime-env.cjs';
+
+          const root = process.cwd();
+          const state = JSON.parse(fs.readFileSync('.runtime/bootstrap-state.json', 'utf8'));
+          const config = state.configuration;
+          assert.equal(process.arch, process.env.EXPECTED_ARCH);
+          assert.equal(config.hardware.arch, process.env.EXPECTED_ARCH);
+          assert.equal(config.engine, 'faster-whisper');
+          assert.equal(config.model, 'tiny');
+          assert.equal(config.cpu, true);
+          assert.equal(config.accelerator, 'cpu');
+          assert.equal(config.pythonPath, path.join(root, '.venv', 'bin', 'python'));
+          assert.ok(fs.realpathSync(config.pythonPath).startsWith(path.join(root, '.runtime', 'python') + path.sep), 'Python must come from the downloaded project runtime');
+          for (const file of ['dist/index.html', 'dist-server/server/index.js']) {
+            assert.ok(fs.statSync(file).size > 0, `Missing build output: ${file}`);
+          }
+          assert.ok(state.modelPath, 'Setup must save the downloaded model path');
+          const relativeModel = path.relative(path.join(root, '.runtime', 'cache'), fs.realpathSync(state.modelPath));
+          assert.ok(relativeModel && !relativeModel.startsWith('..') && !path.isAbsolute(relativeModel), 'The model must use the isolated project cache');
+          for (const name of ['model.bin', 'config.json']) {
+            assert.ok(fs.statSync(path.join(state.modelPath, name)).size > 0, `Missing downloaded model file: ${name}`);
+          }
+
+          const env = {
+            ...getRuntimeEnv(root),
+            WHISPER_ENGINE: config.engine,
+            WHISPER_MODEL: config.model
+          };
+          const check = spawnSync(config.pythonPath, ['-X', 'utf8', 'python/worker.py', 'env-check'], {
+            cwd: root, env, encoding: 'utf8', timeout: 60000, shell: false
+          });
+          assert.ifError(check.error);
+          assert.equal(check.status, 0, check.stderr);
+          const result = JSON.parse(check.stdout.trim());
+          assert.match(result.pythonVersion, /^3\.(?:1[4-9]|[2-9]\d)\./);
+          assert.equal(result.fasterWhisperOk, true, 'The selected transcription dependencies must import');
+          assert.equal(result.ytDlpOk, true, 'yt-dlp must import in the selected Python');
+          assert.equal(result.ffmpegOk, true, 'The worker must find portable FFmpeg');
+          assert.match(result.ffmpegVersion, /^ffmpeg version /);
+          const ffprobe = spawnSync(path.join(root, '.runtime', 'ffmpeg', 'bin', 'ffprobe'), ['-version'], {
+            env, encoding: 'utf8', timeout: 10000, shell: false
+          });
+          assert.ifError(ffprobe.error);
+          assert.equal(ffprobe.status, 0, ffprobe.stderr);
+          assert.match(ffprobe.stdout, /^ffprobe version /);
+
+          const summary = `Linux ${process.arch} cold bootstrap passed.\n\n` +
+            `- Project Node.js: ${process.version}\n` +
+            `- Project Python: ${result.pythonVersion}\n` +
+            `- Backend: faster-whisper CPU, dependencies import successfully\n` +
+            `- Model: tiny, downloaded into the isolated project cache\n` +
+            `- FFmpeg and ffprobe: available\n` +
+            `- WebUI and server: build outputs present\n` +
+            `- Chromium: ${config.browserPath ? 'prepared' : 'optional browser fallback unavailable; inspect installer logs'}\n`;
+          console.log(summary);
+          if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+          NODE

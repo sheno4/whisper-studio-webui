@@ -16,6 +16,12 @@ interface WorkerEnvCheck {
   ffmpegVersion?: string;
   whisperPath?: string;
   fasterWhisperPath?: string;
+  whisperCppOk?: boolean;
+  whisperCppPath?: string;
+  whisperCppError?: string;
+  whisperCppModelOk?: boolean;
+  whisperCppModelPath?: string;
+  whisperCppModelError?: string;
   ytDlpVersion?: string;
 }
 
@@ -53,6 +59,18 @@ function getTranscriptionEngineCheck(settings: SettingsData, workerCheck: Worker
       details: workerCheck?.fasterWhisperPath ?? 'faster-whisper is not available in the selected Python environment.'
     };
   }
+  if (settings.transcriptionEngine === 'whisper.cpp') {
+    const cliOk = workerCheck.whisperCppOk ?? false;
+    const modelOk = workerCheck.whisperCppModelOk ?? false;
+    return {
+      ok: cliOk && modelOk,
+      details: !cliOk
+        ? workerCheck.whisperCppError ?? 'whisper.cpp could not be started.'
+        : !modelOk
+          ? workerCheck.whisperCppModelError ?? 'The selected GGML model is missing: ' + (workerCheck.whisperCppModelPath ?? settings.whisperModel)
+          : workerCheck.whisperCppPath + ' | ' + workerCheck.whisperCppModelPath
+    };
+  }
 
   return {
     ok: workerCheck?.whisperOk ?? false,
@@ -69,7 +87,9 @@ export async function runEnvironmentCheck(
   const pythonEnv = {
     ...getRuntimeEnv(getProjectRoot()),
     PYTHONIOENCODING: 'utf-8',
-    PYTHONUTF8: '1'
+    PYTHONUTF8: '1',
+    WHISPER_ENGINE: settings.transcriptionEngine,
+    WHISPER_MODEL: settings.whisperModel
   };
 
   let pythonError = '';
@@ -140,7 +160,9 @@ export async function runEnvironmentCheck(
     suggestion: transcriptionEngine.ok
       ? 'The selected transcription backend is ready.'
       : workerCheck
-        ? 'Install the selected transcription backend in the configured Python environment.'
+        ? settings.transcriptionEngine === 'whisper.cpp'
+          ? 'Save settings and restart the project to automatically prepare whisper.cpp and the selected GGML model.'
+          : 'Install the selected transcription backend in the configured Python environment.'
         : 'Fix the Python environment first, then run the check again.'
   });
 

@@ -128,6 +128,7 @@ export class PythonWorkerClient {
     let session = this.session;
     if (!session) {
       const child = spawn(options.pythonPath, ['-X', 'utf8', options.workerScriptPath, 'serve'], {
+        detached: process.platform !== 'win32',
         env,
         windowsHide: true,
         stdio: 'pipe'

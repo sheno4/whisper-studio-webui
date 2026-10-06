@@ -8,8 +8,9 @@ import type {
   TranslationServiceInput,
   VideoQualityOption
 } from '../shared/types';
+import { WHISPER_CPP_MODEL_OPTIONS } from '../shared/constants';
 
-const transcriptionEngines = new Set<TranscriptionEngine>(['whisper', 'faster-whisper']);
+const transcriptionEngines = new Set<TranscriptionEngine>(['whisper', 'faster-whisper', 'whisper.cpp']);
 const transcriptionLanguages = new Set<TranscriptionLanguage>([
   'auto', 'zh', 'en', 'yue', 'ja', 'ko', 'es', 'fr', 'de', 'ru', 'pt',
   'it', 'ar', 'hi', 'th', 'vi', 'id', 'tr', 'pl', 'nl', 'uk'
@@ -204,12 +205,16 @@ export const parseSaveSettings = (value: unknown): SaveSettingsPayload => {
   }
 
   const transcriptionEngine = requiredString(record, 'transcriptionEngine', 64) as TranscriptionEngine;
+  const whisperModel = requiredString(record, 'whisperModel', 128);
   const logLevel = requiredString(record, 'logLevel', 32) as LogLevel;
   const translationServices = parseTranslationServices(record.translationServices);
   const activeTranslationServiceId = optionalString(record, 'activeTranslationServiceId', 64);
 
   if (!transcriptionEngines.has(transcriptionEngine)) {
     throw new RequestValidationError('transcriptionEngine is invalid.');
+  }
+  if (transcriptionEngine === 'whisper.cpp' && !(WHISPER_CPP_MODEL_OPTIONS as readonly string[]).includes(whisperModel)) {
+    throw new RequestValidationError('whisperModel is not a supported whisper.cpp GGML model.');
   }
   if (!logLevels.has(logLevel)) {
     throw new RequestValidationError('logLevel is invalid.');
@@ -231,7 +236,7 @@ export const parseSaveSettings = (value: unknown): SaveSettingsPayload => {
     downloadConnections: optionalInteger(record, 'downloadConnections', 8, 1, 16),
     pythonPath: requiredString(record, 'pythonPath'),
     outputDir: requiredString(record, 'outputDir'),
-    whisperModel: requiredString(record, 'whisperModel', 128),
+    whisperModel,
     transcriptionEngine,
     wallpaperPath: optionalString(record, 'wallpaperPath'),
     translateByDefault: requiredBoolean(record, 'translateByDefault'),
