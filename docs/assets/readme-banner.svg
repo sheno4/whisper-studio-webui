@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-labelledby="title description">
+  <title id="title">Whisper Studio</title>
+  <desc id="description">A local transcription workspace: download media, turn audio into words, translate and export subtitles.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#10182c"/>
+      <stop offset="1" stop-color="#1d1740"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#67e8f9"/>
+      <stop offset="0.5" stop-color="#a5b4fc"/>
+      <stop offset="1" stop-color="#c4b5fd"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop stop-color="#7c3aed" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#7c3aed" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="340" rx="24" fill="url(#background)"/>
+  <ellipse cx="960" cy="180" rx="350" ry="240" fill="url(#glow)"/>
+  <path d="M640 0v340M720 0v340M800 0v340M880 0v340M960 0v340M1040 0v340M1120 0v340M600 80h600M600 160h600M600 240h600" stroke="#c4b5fd" stroke-opacity="0.045"/>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif">
+    <rect x="56" y="43" width="162" height="28" rx="14" fill="#67e8f9" fill-opacity="0.1" stroke="#67e8f9" stroke-opacity="0.25"/>
+    <circle cx="73" cy="57" r="4" fill="#67e8f9"/>
+    <text x="85" y="62" fill="#a5f3fc" font-size="11" font-weight="600" letter-spacing="1.2">LOCAL WORKSPACE</text>
+    <text x="54" y="144" fill="#f8fafc" font-size="57" font-weight="700" letter-spacing="-2">Whisper Studio</text>
+    <text x="56" y="187" fill="url(#accent)" font-size="25" font-weight="500">Turn sound into words.</text>
+    <text x="56" y="225" fill="#a5b4cf" font-size="16">Download. Transcribe. Translate. Export.</text>
+    <g fill="#dbeafe" font-size="12" font-weight="600">
+      <rect x="56" y="267" width="99" height="29" rx="8" fill="#ffffff" fill-opacity="0.055"/>
+      <text x="74" y="286">WINDOWS</text>
+      <rect x="165" y="267" width="78" height="29" rx="8" fill="#ffffff" fill-opacity="0.055"/>
+      <text x="184" y="286">LINUX</text>
+      <rect x="253" y="267" width="163" height="29" rx="8" fill="#ffffff" fill-opacity="0.055"/>
+      <text x="270" y="286">CUDA · VULKAN · CPU</text>
+    </g>
+    <g transform="translate(693 54)">
+      <rect width="444" height="231" rx="18" fill="#111b30" stroke="#64748b" stroke-opacity="0.32"/>
+      <circle cx="23" cy="21" r="4" fill="#fb7185" fill-opacity="0.8"/>
+      <circle cx="38" cy="21" r="4" fill="#fbbf24" fill-opacity="0.8"/>
+      <circle cx="53" cy="21" r="4" fill="#34d399" fill-opacity="0.8"/>
+      <text x="421" y="25" text-anchor="end" fill="#94a3b8" font-size="10" letter-spacing="1.8">AUDIO → TEXT</text>
+      <path d="M0 42h444" stroke="#64748b" stroke-opacity="0.2"/>
+      <g stroke="url(#accent)" stroke-width="6" stroke-linecap="round">
+        <path d="M33 90v14M49 80v34M65 63v68M81 74v45M97 83v27M113 56v81M129 70v54M145 86v20M161 76v41M177 66v61M193 85v25"/>
+      </g>
+      <path d="M222 96h33m-7-7 8 7-8 7" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <g stroke="#a5b4fc" stroke-width="5" stroke-linecap="round">
+        <path d="M283 72h120M283 94h96M283 116h108"/>
+      </g>
+      <rect x="25" y="157" width="394" height="49" rx="10" fill="#ffffff" fill-opacity="0.035"/>
+      <circle cx="44" cy="182" r="10" fill="#34d399" fill-opacity="0.14"/>
+      <path d="m39 182 3 3 6-7" fill="none" stroke="#6ee7b7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="63" y="186" fill="#cbd5e1" font-size="12">Ready to export</text>
+      <text x="397" y="186" text-anchor="end" fill="#a5f3fc" font-size="11" font-weight="600">TXT / SRT / VTT / JSON</text>
+    </g>
+  </g>
+</svg>
