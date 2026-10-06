@@ -53,7 +53,7 @@ export async function prepareLaunch(root = projectRoot, options = {}) {
       saveBootstrapState(root, { nodeKey });
     }
     let configuration;
-    if (!options.skipSetup) configuration = await (options.setupProject || setupProject)(root, { ...options, env });
+    if (!options.skipSetup) configuration = await (options.setupProject || setupProject)(root, { ...options, deferModel: !options.setupOnly, env });
     if (configuration) {
       env = getRuntimeEnv(root, env);
       if (configuration.browserPath) env.WHISPER_CHROMIUM_PATH = configuration.browserPath;
@@ -61,6 +61,7 @@ export async function prepareLaunch(root = projectRoot, options = {}) {
       if (configuration.cpu) env.WHISPER_DEVICE = 'cpu';
       if (configuration.pythonLibraryDirs?.length) env.LD_LIBRARY_PATH = [...new Set([...configuration.pythonLibraryDirs, ...(env.LD_LIBRARY_PATH || '').split(':').filter(Boolean)])].join(':');
     }
+    if (options.skipModel) env.WHISPER_SKIP_MODEL_PREFETCH = '1';
     const buildKey = buildFingerprint(root);
     const entries = [path.join(root, 'dist', 'index.html'), path.join(root, 'dist-server', 'server', 'index.js')];
     if (options.rebuild || readBootstrapState(root).buildKey !== buildKey || entries.some((file) => !fs.existsSync(file))) {
@@ -112,7 +113,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try {
     loadProjectEnv(projectRoot);
     const args = process.argv.slice(2);
-    const options = { ...setupOptions(args), rebuild: args.includes('--rebuild'), skipSetup: args.includes('--skip-setup') };
+    const options = { ...setupOptions(args), rebuild: args.includes('--rebuild'), skipSetup: args.includes('--skip-setup'), setupOnly: args.includes('--setup-only') };
     const { env } = await prepareLaunch(projectRoot, options);
     if (args.includes('--setup-only')) console.log('Setup and build complete. Run the launcher again to open the WebUI.');
     else await startServer(projectRoot, env, args.includes('--no-browser'));

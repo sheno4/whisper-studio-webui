@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ToastEvent } from '../../shared/types';
+import { createRandomId } from '../utils';
 
 interface ToastQueueController {
   toasts: ToastEvent[];
@@ -32,7 +33,7 @@ export function useToastQueue(): ToastQueueController {
 
   const pushToast = useCallback(
     (toast: Omit<ToastEvent, 'id'>, durationMs = LOCAL_TOAST_DURATION_MS): void => {
-      enqueueToast({ ...toast, id: crypto.randomUUID() }, durationMs);
+      enqueueToast({ ...toast, id: createRandomId() }, durationMs);
     },
     [enqueueToast]
   );

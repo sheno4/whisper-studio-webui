@@ -281,6 +281,12 @@ export const createWebServer = (taskManager: TaskManager, options: WebServerOpti
   app.post('/api/settings', asyncRoute(async (request, response) => {
     response.json(await taskManager.saveSettings(parseSaveSettings(request.body)));
   }));
+  app.post('/api/models/prepare', (_request, response) => {
+    response.status(202).json(taskManager.prepareModel());
+  });
+  app.post('/api/models/:id/cancel', (request, response) => {
+    response.json({ ok: taskManager.cancelModelPreparation(routeParam(request, 'id')) });
+  });
   app.post('/api/settings/translation-service', asyncRoute(async (request, response) => {
     response.json(await taskManager.setActiveTranslationService(parseActiveTranslationService(request.body)));
   }));

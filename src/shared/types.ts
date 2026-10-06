@@ -232,6 +232,7 @@ export interface CreateTaskOptions {
 
 export interface WorkerTaskRequest {
   phase?: 'prepare' | 'transcribe';
+  preparedModelPath?: string;
   preparedMedia?: PreparedMediaPayload;
   downloadConnections?: number;
   youtubeCookieSource?: 'auto' | 'firefox' | 'chrome' | 'file' | 'none';
@@ -312,11 +313,25 @@ export type WorkerEvent =
   | WorkerErrorEvent
   | WorkerResultEvent;
 
+export interface ModelPreparationState {
+  id: string;
+  pythonPath: string;
+  engine: TranscriptionEngine;
+  model: string;
+  status: 'queued' | 'preparing' | 'ready' | 'failed' | 'cancelled';
+  message: string;
+  percent?: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  error?: string;
+}
+
 export interface AppSnapshot {
   settings: SettingsData;
   tasks: TaskRecord[];
   history: HistoryRecord[];
   environment: EnvironmentStatus;
+  modelPreparations?: ModelPreparationState[];
 }
 
 export interface ToastEvent {

@@ -12,7 +12,7 @@ import type {
   TranscriptionLanguage,
   VideoQualityOption
 } from '../../shared/types';
-import { formatDateTime, getReadableName, isTaskActive, normalizeUiText, toCssFileUrl } from '../utils';
+import { copyTextToClipboard, formatDateTime, getReadableName, isTaskActive, normalizeUiText, toCssFileUrl } from '../utils';
 import { useDesktopSnapshot } from './useDesktopSnapshot';
 import { useToastQueue } from './useToastQueue';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
@@ -307,7 +307,7 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
   const copyText = useCallback(
     async (text: string, label: string): Promise<void> => {
       try {
-        await navigator.clipboard.writeText(text);
+        await copyTextToClipboard(text);
         pushToast({ title: '已复制', message: `${label}已复制到剪贴板。`, tone: 'success' });
       } catch (error) {
         pushToast({ title: '复制失败', message: getErrorMessage(error), tone: 'error' });
@@ -379,7 +379,7 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
     async (payload: SaveSettingsPayload): Promise<void> => {
       const settings = await window.whisperWeb.saveSettings(payload);
       setTranslateNext(settings.translateByDefault);
-      pushToast({ title: '设置已保存', message: '新的默认配置已经生效。', tone: 'success' });
+      pushToast({ title: '设置已保存', message: '新任务使用新的默认配置；缺少的模型会自动准备，无需重启。', tone: 'success' });
     },
     [pushToast]
   );

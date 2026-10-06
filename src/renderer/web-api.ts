@@ -1,15 +1,24 @@
 import type { WhisperWebApi } from '../shared/api';
 import type { AppSnapshot, ToastEvent } from '../shared/types';
+import { createRandomId } from './utils';
 
 const apiBase = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
 const tokenQuery = new URLSearchParams(window.location.search).get('token');
+let storedToken = '';
+try {
+  storedToken = window.sessionStorage.getItem('whisper-web-token') || '';
+  if (tokenQuery) {
+    window.sessionStorage.setItem('whisper-web-token', tokenQuery);
+  }
+} catch {
+  // A blocked storage policy must not prevent a token in this URL from working.
+}
 if (tokenQuery) {
-  window.sessionStorage.setItem('whisper-web-token', tokenQuery);
   const cleanUrl = new URL(window.location.href);
   cleanUrl.searchParams.delete('token');
   window.history.replaceState({}, '', cleanUrl);
 }
-const token = tokenQuery || window.sessionStorage.getItem('whisper-web-token') || '';
+const token = tokenQuery || storedToken;
 
 const apiUrl = (pathname: string): string => `${apiBase}${pathname}`;
 
@@ -122,14 +131,12 @@ const uploadFiles = async (files: object[]): Promise<string[]> => {
       throw new Error(`所有文件上传失败。\n${details}`);
     }
     const toast: ToastEvent = {
-      id: crypto.randomUUID(),
+      id: createRandomId(),
       title: '部分文件上传失败',
       message: `已上传 ${uploadedPaths.length} 个文件，将继续创建任务；${failedFiles.length} 个失败，请重新选择失败的文件。\n${details}`,
       tone: 'warning'
     };
-    for (const listener of toastListeners) {
-      listener(toast);
-    }
+    notifyListeners(toastListeners, toast);
   }
   return uploadedPaths;
 };
@@ -138,9 +145,25 @@ const stateListeners = new Set<(snapshot: AppSnapshot) => void>();
 const toastListeners = new Set<(toast: ToastEvent) => void>();
 let eventSource: EventSource | undefined;
 
+const notifyListeners = <T>(listeners: Set<(value: T) => void>, value: T): void => {
+  for (const listener of listeners) {
+    try {
+      listener(value);
+    } catch {
+      // Notifications must not turn an already successful upload or request
+      // into a failure, or prevent the remaining subscribers from updating.
+      console.error('A WebUI event listener failed.');
+    }
+  }
+};
+
 const connectEvents = (): void => {
   if (eventSource) {
-    return;
+    if (eventSource.readyState !== EventSource.CLOSED) {
+      return;
+    }
+    eventSource.close();
+    eventSource = undefined;
   }
   void ensureSession().then(() => {
     if (eventSource || (stateListeners.size === 0 && toastListeners.size === 0)) {
@@ -149,15 +172,11 @@ const connectEvents = (): void => {
     eventSource = new EventSource(apiUrl('/api/events'), { withCredentials: true });
     eventSource.addEventListener('state', (event) => {
       const snapshot = JSON.parse((event as MessageEvent<string>).data) as AppSnapshot;
-      for (const listener of stateListeners) {
-        listener(snapshot);
-      }
+      notifyListeners(stateListeners, snapshot);
     });
     eventSource.addEventListener('toast', (event) => {
       const toast = JSON.parse((event as MessageEvent<string>).data) as ToastEvent;
-      for (const listener of toastListeners) {
-        listener(toast);
-      }
+      notifyListeners(toastListeners, toast);
     });
   }).catch(() => {
     // The snapshot request reports authentication/network failures. A later
@@ -235,6 +254,8 @@ const api: WhisperWebApi = {
   },
   pickDirectory: async () => window.prompt('请输入运行 WebUI 的机器上的输出目录路径：'),
   saveSettings: (payload) => request('/api/settings', { method: 'POST', body: JSON.stringify(payload) }),
+  prepareModel: () => request('/api/models/prepare', { method: 'POST' }),
+  cancelModelPreparation: async (id) => (await request<{ ok: boolean }>(`/api/models/${encodeURIComponent(id)}/cancel`, { method: 'POST' })).ok,
   setActiveTranslationService: (serviceId) => request('/api/settings/translation-service', {
     method: 'POST',
     body: JSON.stringify({ serviceId })

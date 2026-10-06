@@ -147,3 +147,93 @@ test('CPU environment override and PATH interpreter survive setup without CUDA o
   assert.equal(prepared.env.WHISPER_DEVICE, 'cpu');
   assert.throws(() => setupOptions(['--backend']), /requires a value/);
 });
+
+test('Windows fixture hardware on a Linux host never runs the fake interpreter as a Linux library probe', async (t) => {
+  const { root, options, pythonReady } = fixture(t);
+  pythonReady();
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+  let unexpectedProbe = false;
+  Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+  try {
+    const configuration = await setupProject(root, {
+      ...options,
+      run: (command, args, processOptions) => {
+        if (args.at(-1)?.includes("root = Path(sysconfig.get_path('purelib'))")) {
+          unexpectedProbe = true;
+          throw new Error('The fake Windows interpreter must not be executed for a Linux library probe.');
+        }
+        return options.run(command, args, processOptions);
+      }
+    });
+    assert.deepEqual(configuration.pythonLibraryDirs, []);
+    assert.equal(unexpectedProbe, false);
+  } finally { Object.defineProperty(process, 'platform', descriptor); }
+});
+
+test('a Linux CUDA setup inspects the selected interpreter through the injected process runner', async (t) => {
+  const { root, options, pythonReady } = fixture(t);
+  pythonReady();
+  const inspected = [];
+  const configuration = await setupProject(root, {
+    ...options, env: { WHISPER_PYTHON_PATH: 'selected-linux-python' },
+    hardware: { platform: 'linux', arch: 'x64', memoryGB: 32, gpus: [{ vendor: 'nvidia', memoryMB: 16000 }] },
+    run: (command, args, processOptions) => {
+      if (args.at(-1)?.includes("root = Path(sysconfig.get_path('purelib'))")) {
+        inspected.push(command);
+        return { status: 0, stdout: '["/chosen/env/nvidia/cublas/lib","/chosen/env/nvidia/cudnn/lib"]', stderr: '' };
+      }
+      return options.run(command, args, processOptions);
+    }
+  });
+  assert.equal(configuration.accelerator, 'cuda');
+  assert.ok(inspected.length > 0);
+  assert.deepEqual([...new Set(inspected)], ['selected-linux-python']);
+  assert.deepEqual(configuration.pythonLibraryDirs, ['/chosen/env/nvidia/cublas/lib', '/chosen/env/nvidia/cudnn/lib']);
+});
+
+test('normal launch defers the model while setup-only prefetches, and skip-model keeps prefetch disabled', async (t) => {
+  const { root, options, calls } = fixture(t);
+  const launchOptions = {
+    ...options, nodeDependenciesReady: () => true,
+    runNpm: (args) => {
+      if (args[0] !== 'run') return;
+      fs.mkdirSync(path.join(root, 'dist'), { recursive: true });
+      fs.mkdirSync(path.join(root, 'dist-server', 'server'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'dist', 'index.html'), 'built');
+      fs.writeFileSync(path.join(root, 'dist-server', 'server', 'index.js'), 'built');
+    }
+  };
+  const ordinary = await prepareLaunch(root, launchOptions);
+  assert.equal(ordinary.configuration.modelDeferred, true);
+  assert.equal(calls.some((call) => call.startsWith('model:')), false);
+  assert.equal(ordinary.env.WHISPER_SKIP_MODEL_PREFETCH, undefined);
+  const installed = await prepareLaunch(root, { ...launchOptions, setupOnly: true });
+  assert.equal(installed.configuration.modelDeferred, false);
+  assert.equal(calls.filter((call) => call.startsWith('model:')).length, 1);
+  const skipped = await prepareLaunch(root, { ...launchOptions, setupOnly: true, skipModel: true, model: 'turbo' });
+  assert.equal(skipped.configuration.model, 'turbo');
+  assert.equal(skipped.configuration.modelDeferred, true);
+  assert.equal(skipped.env.WHISPER_SKIP_MODEL_PREFETCH, '1');
+  assert.equal(calls.filter((call) => call.startsWith('model:')).length, 1);
+});
+
+test('setup reuses a compatible custom interpreter without requiring managed Python 3.14', async (t) => {
+  const { root, options, calls } = fixture(t);
+  const selected = 'custom-python-3.12';
+  let checked = false;
+  const configuration = await setupProject(root, {
+    ...options, canRunPython: undefined, env: { WHISPER_PYTHON_PATH: selected },
+    run: (command, args, processOptions) => {
+      if (args[0] === '-c' && args[1]?.includes('sys.version_info')) {
+        checked = true;
+        assert.equal(command, selected);
+        assert.ok(args[1].includes('(3, 10)'));
+        return { status: 0, stdout: '', stderr: '' };
+      }
+      return options.run(command, args, processOptions);
+    }
+  });
+  assert.equal(checked, true);
+  assert.equal(configuration.pythonPath, selected);
+  assert.equal(calls.includes('python'), false);
+});

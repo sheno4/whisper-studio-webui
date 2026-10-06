@@ -11,6 +11,7 @@ import {
   WHISPER_CPP_MODEL_OPTIONS
 } from '../../shared/constants';
 import type {
+  ModelPreparationState,
   SaveSettingsPayload,
   SettingsData,
   TranscriptionEngine,
@@ -21,11 +22,13 @@ import {
   modalPanelVariants,
   paneSwitchVariants
 } from '../motion';
-import { toCssFileUrl } from '../utils';
+import { createRandomId, toCssFileUrl } from '../utils';
 import Icon, { type IconName } from './Icon';
+import ModelPreparationPanel from './ModelPreparationPanel';
 
 interface SettingsModalProps {
   settings: SettingsData;
+  modelPreparations?: ModelPreparationState[];
   onClose: () => void;
   onSave: (payload: SaveSettingsPayload) => Promise<void>;
   onPickDirectory: () => Promise<string | null>;
@@ -130,7 +133,7 @@ function createFormFromSettings(settings: SettingsData): SaveSettingsPayload {
 }
 
 const createEmptyTranslationService = (): TranslationServiceInput => ({
-  id: crypto.randomUUID().replace(/-/g, ''),
+  id: createRandomId().replace(/-/g, ''),
   name: '自定义翻译服务',
   enabled: true,
   apiUrl: '',
@@ -161,6 +164,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 function SettingsModal({
   settings,
+  modelPreparations,
   onClose,
   onSave,
   onPickDirectory,
@@ -172,40 +176,13 @@ function SettingsModal({
     settings.activeTranslationServiceId || settings.translationServices[0]?.id
   );
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [pendingPicker, setPendingPicker] = useState<'output-directory' | 'wallpaper' | null>(null);
   const [operationError, setOperationError] = useState('');
   const [translationTestFeedback, setTranslationTestFeedback] = useState<TranslationTestFeedback>();
   const translationTestRequestId = useRef(0);
-  const translationSettingsSignature = JSON.stringify({
-    services: settings.translationServices,
-    activeId: settings.activeTranslationServiceId
-  });
-
-  useEffect(() => {
-    translationTestRequestId.current += 1;
-    setForm(createFormFromSettings(settings));
-    setOperationError('');
-    setTranslationTestFeedback(undefined);
-    setSelectedServiceId(settings.activeTranslationServiceId || settings.translationServices[0]?.id);
-  }, [
-    settings.maxConcurrentDownloads,
-    settings.maxConcurrentTranscriptions,
-    settings.maxConcurrentTranslations,
-    settings.downloadConnections,
-    settings.youtubeCookieSource,
-    settings.youtubeBrowserProfile,
-    settings.pythonPath,
-    settings.outputDir,
-    settings.whisperModel,
-    settings.transcriptionEngine,
-    settings.wallpaperPath,
-    settings.translateByDefault,
-    settings.activeTranslationServiceId,
-    translationSettingsSignature,
-    settings.keepAudio,
-    settings.logLevel,
-    settings.debugMode
-  ]);
+  // Keep this draft until the dialog closes. Background snapshots, including
+  // model progress and settings changed elsewhere, must not discard edits.
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent): void => {
@@ -342,19 +319,30 @@ function SettingsModal({
   };
 
   const handleSave = async (): Promise<void> => {
-    if (saving) {
+    if (savingRef.current) {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
     setOperationError('');
 
     try {
-      await onSave(form);
-      onClose();
+      const submitted = form;
+      await onSave(submitted);
+      setForm((current) => ({
+        ...current,
+        translationServices: current.translationServices.map((service) => {
+          const saved = submitted.translationServices.find((candidate) => candidate.id === service.id);
+          return saved && service.apiKey === saved.apiKey && service.clearApiKey === saved.clearApiKey
+            ? { ...service, apiKey: '', clearApiKey: false }
+            : service;
+        })
+      }));
     } catch (error) {
       reportOperationError('保存设置失败', error, '请检查设置内容并稍后重试');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -496,10 +484,14 @@ function SettingsModal({
                 </option>
               ))}
             </select>
-            {form.transcriptionEngine === 'whisper.cpp' && (
-              <small>首次启动自动准备所选模型。更换为尚未下载的模型后，保存设置并重新启动以下载。</small>
-            )}
+            <small>保存后立即在后台准备模型。转写任务会自动等待，无需重启。</small>
           </label>
+        </div>
+        <div className="settings-model-preparation">
+          {form.transcriptionEngine !== settings.transcriptionEngine || form.whisperModel !== settings.whisperModel ? (
+            <p className="model-preparation-note">模型选择尚未保存。下方显示当前已保存模型的准备状态。</p>
+          ) : null}
+          <ModelPreparationPanel preparations={modelPreparations} settings={settings} />
         </div>
       </section>
 
@@ -513,7 +505,6 @@ function SettingsModal({
             <p>下载、转写和翻译可同时进行，分别设置每类任务的同时处理数量。</p>
           </div>
         </div>
-
         <div className="settings-grid">
           <label className="settings-field">
             <span>同时下载任务数</span>
@@ -1181,7 +1172,7 @@ function SettingsModal({
 
             <div className="settings-sidebar-note">
               <Icon name="info" size={16} />
-              <span>设置仅保存在此设备</span>
+              <span>设置保存在运行 WebUI 的机器上</span>
             </div>
           </aside>
 
@@ -1230,7 +1221,7 @@ function SettingsModal({
                 onClick={onClose}
                 type="button"
               >
-                取消
+                关闭
               </button>
               <button
                 className="primary-button"

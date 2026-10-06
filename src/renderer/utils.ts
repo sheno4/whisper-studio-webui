@@ -221,3 +221,85 @@ export const describeTaskLanguage = (task: {
   const detected = getTranscriptionLanguageLabel(task.language);
   return detected ? `识别 ${detected}` : undefined;
 };
+
+// IDs identify UI records; they are not authentication tokens. LAN HTTP pages
+// cannot call randomUUID, although getRandomValues is usually still available.
+export const createRandomId = (): string => {
+  const webCrypto = globalThis.crypto;
+  if (typeof webCrypto?.randomUUID === 'function') {
+    try {
+      return webCrypto.randomUUID();
+    } catch {
+      // Fall through when an embedded browser exposes an unusable implementation.
+    }
+  }
+
+  const bytes = new Uint8Array(16);
+  try {
+    if (typeof webCrypto?.getRandomValues !== 'function') {
+      throw new Error('Web Crypto is unavailable.');
+    }
+    webCrypto.getRandomValues(bytes);
+  } catch {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+export const copyTextToClipboard = async (text: string): Promise<void> => {
+  if (typeof navigator !== 'undefined' && typeof navigator.clipboard?.writeText === 'function') {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Permission errors and insecure contexts can still allow a user-initiated
+      // copy through the older DOM API.
+    }
+  }
+  if (typeof document === 'undefined' || !document.body || typeof document.execCommand !== 'function') {
+    throw new Error('当前浏览器不支持自动复制，请手动选中文本复制。');
+  }
+
+  const previousFocus = document.activeElement;
+  const inputSelection = previousFocus instanceof HTMLInputElement || previousFocus instanceof HTMLTextAreaElement
+    ? { start: previousFocus.selectionStart, end: previousFocus.selectionEnd, direction: previousFocus.selectionDirection }
+    : undefined;
+  const selection = document.getSelection();
+  const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange()) : [];
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '-1000px';
+  textarea.style.opacity = '0';
+  document.body.append(textarea);
+  try {
+    textarea.focus({ preventScroll: true });
+    textarea.select();
+    textarea.setSelectionRange(0, text.length);
+    if (!document.execCommand('copy')) {
+      throw new Error('浏览器拒绝了复制操作，请手动选中文本复制。');
+    }
+  } finally {
+    textarea.remove();
+    if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+      previousFocus.focus({ preventScroll: true });
+      if (inputSelection && inputSelection.start !== null && inputSelection.end !== null) {
+        (previousFocus as HTMLInputElement | HTMLTextAreaElement).setSelectionRange(
+          inputSelection.start, inputSelection.end, inputSelection.direction ?? undefined
+        );
+      }
+    }
+    if (selection) {
+      selection.removeAllRanges();
+      for (const range of ranges) {
+        selection.addRange(range);
+      }
+    }
+  }
+};

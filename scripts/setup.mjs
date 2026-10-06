@@ -2,9 +2,9 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { canRunPython, getVenvPython } from './python-runtime.mjs';
+import { getVenvPython } from './python-runtime.mjs';
 import { getRuntimeEnv } from './runtime-env.cjs';
-import { ensurePythonRuntime, ensureFfmpeg, downloadVerifiedFile } from './portable-tools.mjs';
+import { ensurePythonRuntime, ensureFfmpeg } from './portable-tools.mjs';
 import { detectHardware, chooseBackend, chooseModel } from './hardware.mjs';
 import { selectedPythonLibraryDirs } from './python-libraries.mjs';
 import { fingerprint, readBootstrapState, saveBootstrapState, runtimeDirectory, withSetupLock } from './bootstrap-state.mjs';
@@ -41,27 +41,16 @@ function saveSettings(file, document, settings) {
   fs.renameSync(temporary, file);
 }
 
-async function prefetchModel(root, pythonPath, engine, model, env, execute) {
+async function prefetchModel(root, pythonPath, engine, model, env) {
   console.log(`Preparing ${engine} model ${model}. The first download can take several minutes...`);
-  if (engine === 'whisper.cpp') {
-    const name = { turbo: 'large-v3-turbo', large: 'large-v3' }[model] || model;
-    if (!/^(?:tiny|base|small|medium)(?:\.en)?$|^large-v[123]$|^large-v3-turbo$/.test(name)) throw new Error(`Unsupported whisper.cpp model: ${model}`);
-    const directory = path.resolve(env.WHISPER_CPP_MODEL_DIR || path.join(root, '.runtime', 'models', 'whisper-cpp'));
-    fs.mkdirSync(directory, { recursive: true });
-    const filename = `ggml-${name}.bin`;
-    const target = path.join(directory, filename);
-    const response = await fetch('https://huggingface.co/api/models/ggerganov/whisper.cpp/tree/main', { signal: AbortSignal.timeout(60000) });
-    if (!response.ok) throw new Error(`Model metadata returned HTTP ${response.status}. Run the launcher again to resume setup.`);
-    const entry = (await response.json()).find((item) => item.path === filename);
-    if (!/^[a-f0-9]{64}$/i.test(entry?.lfs?.oid || '')) throw new Error('The model publisher did not provide the expected SHA256 digest.');
-    await downloadVerifiedFile({ url: `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/${filename}`, sha256: entry.lfs.oid }, target, `Whisper model ${model}`);
-    return target;
-  }
-  const script = engine === 'faster-whisper'
-    ? `from faster_whisper.utils import download_model\nprint(download_model(${JSON.stringify(model)}))`
-    : `import whisper\nprint(whisper._download(whisper._MODELS[${JSON.stringify(model)}],os.path.join(os.environ['XDG_CACHE_HOME'],'whisper'),False))`;
-  const result = execute(pythonPath, ['-X', 'utf8', '-c', dllPrelude + script], { modelDownload: true });
-  return result.stdout.trim().split(/\r?\n/).at(-1);
+  const { prepareModel } = await import('./model-runtime.mjs');
+  const result = await prepareModel({ projectRoot: root, pythonPath, engine, model }, {
+    env,
+    onEvent: (event) => {
+      if (event.type === 'progress' && event.message) console.log(event.message);
+    }
+  });
+  return typeof result === 'string' ? result : result.path;
 }
 
 export async function setupProject(root = projectRoot, options = {}) {
@@ -109,9 +98,14 @@ export async function setupProject(root = projectRoot, options = {}) {
   const managedSaved = savedPython && /[\\/]\.venv[\\/](?:Scripts[\\/]python\.exe|bin[\\/]python)$/.test(savedPython);
   const explicitPython = env.WHISPER_PYTHON_PATH?.trim() || (!managedSaved && savedPython);
   const pythonPath = explicitPython ? (/[/\\]/.test(explicitPython) || path.isAbsolute(explicitPython) ? path.resolve(root, explicitPython) : explicitPython) : localPython;
-  const runnable = options.canRunPython || ((command) => canRunPython(command, [], env));
+  const runnable = options.canRunPython || ((command) => {
+    // Managed installations default to 3.14, but a compatible existing or
+    // custom interpreter does not need to be replaced to use the application.
+    try { execute(command, ['-c', 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'], { capture: true }); return true; }
+    catch { return false; }
+  });
   if (!runnable(pythonPath)) {
-    if (explicitPython) throw new Error('The configured WHISPER_PYTHON_PATH cannot run Python 3.14+. Correct the interpreter setting, or remove it to use the automatic project environment.');
+    if (explicitPython) throw new Error('The configured WHISPER_PYTHON_PATH cannot run Python 3.10+. Correct the interpreter setting, or remove it to use the automatic project environment.');
     const bootstrap = await (options.ensurePythonRuntime || ensurePythonRuntime)(root, env);
     const venv = path.join(root, '.venv');
     if (fs.existsSync(venv)) {
@@ -159,7 +153,7 @@ export async function setupProject(root = projectRoot, options = {}) {
   const requirements = engine === 'whisper' ? 'requirements-whisper.txt' : engine === 'whisper.cpp' ? 'requirements-common.txt' : cuda ? 'requirements-faster-cuda.txt' : 'requirements.txt';
   let pythonLibraryDirs = [];
   const prepareLibraries = () => {
-    pythonLibraryDirs = selectedPythonLibraryDirs(pythonPath, env);
+    pythonLibraryDirs = selectedPythonLibraryDirs(pythonPath, env, { platform: hardware.platform, run });
     if (pythonLibraryDirs.length) env.LD_LIBRARY_PATH = [...new Set([...pythonLibraryDirs, ...(env.LD_LIBRARY_PATH || '').split(':').filter(Boolean)])].join(':');
   };
   prepareLibraries();
@@ -180,7 +174,7 @@ export async function setupProject(root = projectRoot, options = {}) {
     if (env.WHISPER_CHROMIUM_PATH?.trim()) throw error;
     console.warn(`Browser preparation failed: ${error.message}\nDouyin browser fallback is unavailable. Core downloading and transcription are ready; rerun setup after fixing the browser dependency or connection.`);
   }
-  if (!options.skipModel) {
+  if (!options.skipModel && !options.deferModel) {
     const modelKey = `${engine}:${model}:${env.HF_HOME}:${env.HF_HUB_CACHE || ''}:${env.HUGGINGFACE_HUB_CACHE || ''}:${env.XDG_CACHE_HOME}:${env.WHISPER_CPP_MODEL_DIR || ''}`;
     const saved = readBootstrapState(root);
     const nonempty = (file) => { try { return fs.statSync(file).isFile() && fs.statSync(file).size > 0; } catch { return false; } };
@@ -197,9 +191,10 @@ export async function setupProject(root = projectRoot, options = {}) {
     ...(options.model ? { whisperModel: model } : {})
   };
   if (Object.keys(settings).length) saveSettings(settingsFile, document, settings);
-  const configuration = { pythonPath, engine, model, accelerator, hardware, browserPath, cppPath: native?.executable, pythonLibraryDirs, cpu: cpu || env.WHISPER_DEVICE === 'cpu' };
+  const configuration = { pythonPath, engine, model, accelerator, hardware, browserPath, cppPath: native?.executable, pythonLibraryDirs, cpu: cpu || env.WHISPER_DEVICE === 'cpu', modelDeferred: Boolean(options.skipModel || options.deferModel) };
   saveBootstrapState(root, { configuration });
-  console.log(`Environment ready: ${engine}, ${accelerator}, model ${model}${options.skipModel ? ' (download deferred)' : ''}.`);
+  const modelNote = options.skipModel ? ' (download skipped; tasks prepare it on demand)' : options.deferModel ? ' (prepared after the service starts)' : '';
+  console.log(`Environment ready: ${engine}, ${accelerator}, model ${model}${modelNote}.`);
   return configuration;
 }
 

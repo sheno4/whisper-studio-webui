@@ -12,6 +12,7 @@ import type {
   EnvironmentStatus,
   ExportFileKind,
   HistoryRecord,
+  ModelPreparationState,
   SaveSettingsPayload,
   SettingsData,
   TaskLogEntry,
@@ -35,6 +36,7 @@ import {
 import { getProjectRoot, getUploadsDir, getWorkerScriptPath, resolveStoredRuntimePaths } from './paths';
 import { TaskSlotLimiter } from './concurrency';
 import { PythonWorkerClient } from './python-worker';
+import { ModelPreparationManager } from './model-preparation';
 import { openLocalPath, revealLocalPath } from './system';
 import {
   getHistoryRecords,
@@ -124,11 +126,16 @@ export class TaskManager {
   private readonly translationSlots = new TaskSlotLimiter(this.settings.maxConcurrentTranslations ?? 2);
   private readonly outputFinalizationSlot = new TaskSlotLimiter(1);
   private readonly preparationWorkers = new Set<PythonWorkerClient>();
-  private readonly transcriptionWorkers: Array<{ client: PythonWorkerClient; busy: boolean; pythonPath: string }> = [];
+  private readonly transcriptionWorkers: Array<{ client: PythonWorkerClient; busy: boolean; pythonPath: string; engine: SettingsData['transcriptionEngine'] }> = [];
   private cancellingTaskIds = new Set<string>();
   private stateBroadcastTimer?: NodeJS.Timeout;
   private readonly stateListeners = new Set<(snapshot: AppSnapshot) => void>();
   private readonly toastListeners = new Set<(toast: ToastEvent) => void>();
+  private readonly modelPreparation = new ModelPreparationManager({
+    projectRoot: getProjectRoot(), onChange: () => this.handleModelPreparationChange()
+  });
+  private modelEnvironmentState = '';
+  private environmentRevision = 0;
 
   onState(listener: (snapshot: AppSnapshot) => void): () => void {
     this.stateListeners.add(listener);
@@ -167,7 +174,11 @@ export class TaskManager {
   async initialize(): Promise<void> {
     await fs.mkdir(this.settings.outputDir, { recursive: true });
     await this.cleanupStorage();
-    this.environment = await runEnvironmentCheck(this.settings);
+    if (process.env.WHISPER_SKIP_MODEL_PREFETCH !== '1') this.prepareModel();
+    const settings = this.settings;
+    const revision = ++this.environmentRevision;
+    const environment = await runEnvironmentCheck(settings);
+    if (revision === this.environmentRevision && settings === this.settings && !this.shuttingDown) this.environment = environment;
     this.flushStateBroadcast();
   }
 
@@ -176,7 +187,8 @@ export class TaskManager {
       settings: this.settings,
       tasks: this.tasks,
       history: this.history,
-      environment: this.environment
+      environment: this.environment,
+      modelPreparations: this.modelPreparation.getStates()
     };
   }
 
@@ -184,13 +196,38 @@ export class TaskManager {
     return this.settings;
   }
 
+  prepareModel(): ModelPreparationState {
+    return { ...this.modelPreparation.prepare(this.settings, true).state };
+  }
+
+  cancelModelPreparation(id: string): boolean {
+    return this.modelPreparation.cancel(id);
+  }
+
+  private handleModelPreparationChange(): void {
+    this.broadcastState();
+    const model = this.settings.transcriptionEngine === 'whisper.cpp'
+      ? ({ turbo: 'large-v3-turbo', large: 'large-v3' } as Record<string, string>)[this.settings.whisperModel] || this.settings.whisperModel
+      : this.settings.whisperModel;
+    const state = this.modelPreparation.getStates().find((item) => item.pythonPath === this.settings.pythonPath && item.engine === this.settings.transcriptionEngine && item.model === model);
+    if (!state || !['ready', 'failed', 'cancelled'].includes(state.status)) return;
+    const revision = `${state.id}:${state.status}`;
+    if (revision === this.modelEnvironmentState || this.shuttingDown) return;
+    this.modelEnvironmentState = revision;
+    void this.refreshEnvironmentInBackground();
+  }
+
   async saveSettings(payload: SaveSettingsPayload): Promise<SettingsData> {
+    const previous = this.settings;
     const { outputDir } = resolveStoredRuntimePaths({
       pythonPath: payload.pythonPath.trim(),
       outputDir: path.resolve(payload.outputDir.trim())
     });
     await probeOutputDirectory(outputDir);
     this.settings = saveSettingsView(payload);
+    if (previous.pythonPath !== this.settings.pythonPath ||
+      previous.transcriptionEngine !== this.settings.transcriptionEngine ||
+      previous.whisperModel !== this.settings.whisperModel) this.prepareModel();
     this.downloadSlots.setLimit(this.settings.maxConcurrentDownloads ?? 3);
     this.transcriptionSlots.setLimit(this.settings.maxConcurrentTranscriptions ?? 1);
     this.translationSlots.setLimit(this.settings.maxConcurrentTranslations ?? 2);
@@ -506,7 +543,8 @@ export class TaskManager {
       this.stateBroadcastTimer = undefined;
       const snapshot = this.getSnapshot();
       for (const listener of this.stateListeners) {
-        listener(snapshot);
+        try { listener(snapshot); }
+        catch { this.stateListeners.delete(listener); }
       }
     }, 100);
   }
@@ -519,7 +557,8 @@ export class TaskManager {
 
     const snapshot = this.getSnapshot();
     for (const listener of this.stateListeners) {
-      listener(snapshot);
+      try { listener(snapshot); }
+      catch { this.stateListeners.delete(listener); }
     }
   }
 
@@ -824,6 +863,7 @@ export class TaskManager {
   }
 
   private async executeTask(task: TaskRecord): Promise<void> {
+    const runtimeSettings = { ...this.settings };
     if (task.sourceType === 'link') {
       const normalizedInput = normalizeLinkCandidate(task.input) ?? task.input;
       if (normalizedInput !== task.input) {
@@ -850,13 +890,13 @@ export class TaskManager {
       input: task.input,
       displayName: task.displayName,
       outputDir: task.outputDir,
-      whisperModel: this.settings.whisperModel,
-      transcriptionEngine: this.settings.transcriptionEngine,
-      youtubeCookieSource: this.settings.youtubeCookieSource ?? 'auto',
-      youtubeBrowserProfile: this.settings.youtubeBrowserProfile,
-      downloadConnections: this.settings.downloadConnections ?? 8,
-      keepAudio: this.settings.keepAudio,
-      logLevel: this.settings.logLevel,
+      whisperModel: runtimeSettings.whisperModel,
+      transcriptionEngine: runtimeSettings.transcriptionEngine,
+      youtubeCookieSource: runtimeSettings.youtubeCookieSource ?? 'auto',
+      youtubeBrowserProfile: runtimeSettings.youtubeBrowserProfile,
+      downloadConnections: runtimeSettings.downloadConnections ?? 8,
+      keepAudio: runtimeSettings.keepAudio,
+      logLevel: runtimeSettings.logLevel,
       downloadBehavior: task.downloadBehavior,
       videoQuality: task.videoQuality,
       transcriptionLanguage:
@@ -867,7 +907,7 @@ export class TaskManager {
     try {
       await fs.mkdir(task.outputDir, { recursive: true });
       this.throwIfTaskCancelled(task);
-      const workerResult = await this.runWorkerTask(task, request);
+      const workerResult = await this.runWorkerTask(task, request, runtimeSettings);
       this.throwIfTaskCancelled(task);
 
       const resolvedDisplayName =
@@ -961,11 +1001,14 @@ export class TaskManager {
     }
   }
 
-  private createWorker(): PythonWorkerClient {
+  private createWorker(settings: SettingsData = this.settings): PythonWorkerClient {
+    const env = buildPythonEnv();
+    const libraries = this.modelPreparation.getPythonLibraryDirs(settings.pythonPath);
+    if (process.platform === 'linux' && libraries.length) env.LD_LIBRARY_PATH = [...new Set([...libraries, ...(env.LD_LIBRARY_PATH || '').split(':').filter(Boolean)])].join(':');
     return new PythonWorkerClient({
-      pythonPath: this.settings.pythonPath,
+      pythonPath: settings.pythonPath,
       workerScriptPath: getWorkerScriptPath(),
-      env: buildPythonEnv()
+      env
     });
   }
 
@@ -973,7 +1016,7 @@ export class TaskManager {
     const retired: PythonWorkerClient[] = [];
     for (let index = this.transcriptionWorkers.length - 1; index >= 0; index--) {
       const worker = this.transcriptionWorkers[index];
-      if (!worker.busy && (worker.pythonPath !== this.settings.pythonPath ||
+      if (!worker.busy && (worker.pythonPath !== this.settings.pythonPath || worker.engine !== this.settings.transcriptionEngine ||
           this.transcriptionWorkers.length > (this.settings.maxConcurrentTranscriptions ?? 1))) {
         this.transcriptionWorkers.splice(index, 1);
         retired.push(worker.client);
@@ -1004,14 +1047,16 @@ export class TaskManager {
     }
   }
 
-  private async runWorkerTask(task: TaskRecord, request: WorkerTaskRequest): Promise<WorkerResultPayload> {
+  private async runWorkerTask(task: TaskRecord, request: WorkerTaskRequest, runtimeSettings: SettingsData = this.settings): Promise<WorkerResultPayload> {
     const signal = this.taskControllers.get(task.id)?.signal;
+    const modelSettings = { pythonPath: runtimeSettings.pythonPath, transcriptionEngine: request.transcriptionEngine, whisperModel: request.whisperModel };
+    if (request.downloadBehavior !== 'downloadOnly') this.modelPreparation.prepare(modelSettings, true);
     this.updateTask(task.id, {
       status: 'preprocessing', progressMessage: task.sourceType === 'link' ? '正在等待下载资源' : '正在等待媒体准备资源'
     });
     const releaseDownload = await this.downloadSlots.acquire(signal);
     let prepared: WorkerResultPayload;
-    const prepareWorker = this.createWorker();
+    const prepareWorker = this.createWorker(runtimeSettings);
     this.preparationWorkers.add(prepareWorker);
     try {
       this.throwIfTaskCancelled(task);
@@ -1026,17 +1071,20 @@ export class TaskManager {
     this.throwIfTaskCancelled(task);
     if (request.downloadBehavior === 'downloadOnly') return prepared;
     if (!prepared.preparedMedia) throw new Error('媒体准备结果不完整，无法开始转写。');
+    this.updateTask(task.id, { status: 'preprocessing', progressMessage: `正在等待 ${request.whisperModel} 模型就绪` });
+    const preparedModelPath = await this.modelPreparation.waitFor(modelSettings, signal);
+    this.throwIfTaskCancelled(task);
     this.updateTask(task.id, { status: 'preprocessing', progressMessage: '媒体已准备，正在等待显卡转写资源' });
     const releaseTranscription = await this.transcriptionSlots.acquire(signal);
-    let worker = this.transcriptionWorkers.find((item) => !item.busy && item.pythonPath === this.settings.pythonPath);
+    let worker = this.transcriptionWorkers.find((item) => !item.busy && item.pythonPath === runtimeSettings.pythonPath && item.engine === request.transcriptionEngine);
     if (!worker) {
-      worker = { client: this.createWorker(), busy: false, pythonPath: this.settings.pythonPath };
+      worker = { client: this.createWorker(runtimeSettings), busy: false, pythonPath: runtimeSettings.pythonPath, engine: request.transcriptionEngine };
       this.transcriptionWorkers.push(worker);
     }
     worker.busy = true;
     try {
       this.throwIfTaskCancelled(task);
-      return await worker.client.run({ ...request, phase: 'transcribe', displayName: prepared.displayName,
+      return await worker.client.run({ ...request, phase: 'transcribe', preparedModelPath, displayName: prepared.displayName,
         outputDir: prepared.outputDir, preparedMedia: prepared.preparedMedia },
         (event) => this.handleWorkerEvent(task, event), signal);
     } finally {
@@ -1153,8 +1201,12 @@ export class TaskManager {
   }
 
   private async refreshEnvironmentInBackground(): Promise<void> {
+    const settings = this.settings;
+    const revision = ++this.environmentRevision;
     try {
-      this.environment = await runEnvironmentCheck(this.settings);
+      const environment = await runEnvironmentCheck(settings);
+      if (revision !== this.environmentRevision || this.settings !== settings || this.shuttingDown) return;
+      this.environment = environment;
       this.broadcastState();
     } catch (error) {
       await writeAppLog(
@@ -1171,6 +1223,7 @@ export class TaskManager {
       this.cancellingTaskIds.add(taskId);
       controller.abort();
     }
+    await this.modelPreparation.shutdown();
     await Promise.allSettled([...this.runningTasks.values()]);
     await Promise.allSettled([
       ...[...this.preparationWorkers].map((worker) => worker.shutdown()),

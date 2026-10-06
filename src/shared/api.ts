@@ -2,6 +2,7 @@ import type {
   AppSnapshot,
   CreateTaskOptions,
   ExportFileKind,
+  ModelPreparationState,
   SaveSettingsPayload,
   SettingsData,
   TaskRecord,
@@ -30,6 +31,8 @@ export interface WhisperWebApi {
   pickWallpaperFile: () => Promise<string | null>;
   pickDirectory: () => Promise<string | null>;
   saveSettings: (payload: SaveSettingsPayload) => Promise<SettingsData>;
+  prepareModel: () => Promise<ModelPreparationState>;
+  cancelModelPreparation: (id: string) => Promise<boolean>;
   setActiveTranslationService: (serviceId: string) => Promise<SettingsData>;
   testTranslationService: (service: TranslationServiceInput) => Promise<TranslationServiceTestResult>;
   clearHistory: () => Promise<void>;

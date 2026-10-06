@@ -10,6 +10,7 @@ import EnvironmentBanner from './components/EnvironmentBanner';
 import Icon from './components/Icon';
 import InputComposer from './components/InputComposer';
 import LiquidBackdrop from './components/LiquidBackdrop';
+import ModelPreparationPanel from './components/ModelPreparationPanel';
 import SettingsModal from './components/SettingsModal';
 import StartupState from './components/StartupState';
 import TaskDetail from './components/TaskDetail';
@@ -84,6 +85,7 @@ function App(): React.JSX.Element {
 
           <motion.div className="environment-slot" variants={fadeUpVariants}>
             <EnvironmentBanner environment={snapshot.environment} />
+            <ModelPreparationPanel preparations={snapshot.modelPreparations} settings={snapshot.settings} />
           </motion.div>
 
           <motion.section className="workspace-grid" variants={fadeUpVariants}>
@@ -147,6 +149,7 @@ function App(): React.JSX.Element {
         {workspace.settingsOpen && snapshot ? (
           <SettingsModal
             key="settings"
+            modelPreparations={snapshot.modelPreparations}
             onClose={() => workspace.setSettingsOpen(false)}
             onPickDirectory={() => window.whisperWeb.pickDirectory()}
             onPickWallpaper={() => window.whisperWeb.pickWallpaperFile()}

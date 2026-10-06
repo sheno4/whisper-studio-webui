@@ -161,8 +161,8 @@ export async function runEnvironmentCheck(
       ? 'The selected transcription backend is ready.'
       : workerCheck
         ? settings.transcriptionEngine === 'whisper.cpp'
-          ? 'Save settings and restart the project to automatically prepare whisper.cpp and the selected GGML model.'
-          : 'Install the selected transcription backend in the configured Python environment.'
+          ? 'Use the model preparation panel to download or retry the selected backend and model. No restart is required.'
+          : 'Use the model preparation panel to prepare the selected backend and model in the configured Python environment.'
         : 'Fix the Python environment first, then run the check again.'
   });
 

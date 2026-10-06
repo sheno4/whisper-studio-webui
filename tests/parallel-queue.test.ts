@@ -43,6 +43,8 @@ test('parallel pipeline overlaps downloads with transcription and isolates cance
 
   await t.test('downloads keep advancing while one warmed transcription slot is occupied', async (subtest) => {
     const manager = new TaskManager() as any;
+    subtest.mock.method(manager.modelPreparation, 'prepare', () => ({ state: { status: 'ready' }, promise: Promise.resolve('fixture-model') }));
+    subtest.mock.method(manager.modelPreparation, 'waitFor', async () => 'fixture-model');
     const preparations = new Map<string, ReturnType<typeof deferred>>();
     const transcriptionGate = deferred();
     let downloads = 0, peakDownloads = 0, transcriptions = 0, peakTranscriptions = 0;
@@ -65,7 +67,8 @@ test('parallel pipeline overlaps downloads with transcription and isolates cance
     manager.tasks.push(...tasks);
     const draining = manager.processQueue();
     await waitFor(() => preparations.size === 3);
-    preparations.get(tasks[0].id)!.resolve();
+    // Filesystem preparation can finish in a different order across platforms.
+    preparations.values().next().value!.resolve();
     await waitFor(() => transcriptions === 1 && preparations.size === 4);
     assert.equal(downloads, 3);
     assert.equal(peakDownloads, 3);

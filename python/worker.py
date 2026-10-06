@@ -2701,6 +2701,7 @@ def transcribe_with_faster_whisper(
     audio_path: Path,
     model_name: str,
     language: str | None,
+    prepared_model_path: str | None = None,
 ) -> dict[str, Any]:
     configure_faster_whisper_cuda_runtime()
     from faster_whisper.utils import download_model  # type: ignore
@@ -2736,8 +2737,14 @@ def transcribe_with_faster_whisper(
         f"Preparing faster-whisper model files: {model_name} (first run may take a few minutes)",
         0,
     )
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        model_path = download_model(model_name)
+    if prepared_model_path:
+        model_folder = Path(prepared_model_path)
+        if not all((model_folder / name).is_file() and (model_folder / name).stat().st_size > 0 for name in ("model.bin", "config.json")):
+            raise WorkerFailure("model_cache_missing", "已准备的模型缓存不可用，请在模型面板重试。")
+        model_path = str(model_folder)
+    else:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            model_path = download_model(model_name)
     log(
         "info",
         f"Resolved faster-whisper model {model_name} to {model_path}",
@@ -2781,17 +2788,21 @@ def transcribe_with_openai_whisper_optimized(
     audio_path: Path,
     model_name: str,
     language: str | None,
+    prepared_model_path: str | None = None,
 ) -> dict[str, Any]:
     import whisper  # type: ignore
 
     whisper_transcribe_module = importlib.import_module("whisper.transcribe")
     cpu_only = os.environ.get("WHISPER_DEVICE", "").strip().lower() == "cpu"
-    cache_key = model_name + (":cpu" if cpu_only else ":auto")
+    model_source = prepared_model_path or model_name
+    if prepared_model_path and (not Path(prepared_model_path).is_file() or Path(prepared_model_path).stat().st_size == 0):
+        raise WorkerFailure("model_cache_missing", "已准备的模型缓存不可用，请在模型面板重试。")
+    cache_key = model_source + (":cpu" if cpu_only else ":auto")
     model = OPENAI_WHISPER_MODEL_CACHE.get(cache_key)
     if model is None:
         progress("transcribing", f"Loading openai-whisper model: {model_name}", 0)
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            model = whisper.load_model(model_name, device="cpu") if cpu_only else whisper.load_model(model_name)
+            model = whisper.load_model(model_source, device="cpu") if cpu_only else whisper.load_model(model_source)
         OPENAI_WHISPER_MODEL_CACHE.clear()
         OPENAI_WHISPER_MODEL_CACHE[cache_key] = model
 
@@ -2823,9 +2834,10 @@ def transcribe_audio(
     model_name: str,
     engine: str,
     language: str | None,
+    prepared_model_path: str | None = None,
 ) -> dict[str, Any]:
     if engine == "faster-whisper":
-        return transcribe_with_faster_whisper(audio_path, model_name, language)
+        return transcribe_with_faster_whisper(audio_path, model_name, language, prepared_model_path)
     if engine == "whisper.cpp":
         return whisper_cpp_backend.transcribe(
             audio_path, model_name, language,
@@ -2833,7 +2845,7 @@ def transcribe_audio(
             log_callback=lambda level, message: log(level, message, "transcription"),
         )
     if engine == "whisper":
-        return transcribe_with_openai_whisper_optimized(audio_path, model_name, language)
+        return transcribe_with_openai_whisper_optimized(audio_path, model_name, language, prepared_model_path)
     raise WorkerFailure("transcription_engine_invalid", f"不支持的转写引擎：{engine}")
 
 
@@ -2998,6 +3010,7 @@ def process_task(request: dict[str, Any]) -> None:
             request["whisperModel"],
             transcription_engine,
             transcription_language,
+            prepared_model_path=request.get("preparedModelPath"),
         )
     finally:
         if staged_input_dir is not None:

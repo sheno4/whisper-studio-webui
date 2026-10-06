@@ -49,7 +49,7 @@ Node.js / Express local server
 
 自动下载覆盖上述 x64/ARM64 平台。Alpine/musl、32 位及其他架构需要自行提供兼容工具。Linux 的桌面浏览器仍依赖发行版的基础图形库；缺库时显示具体错误，核心转写可以继续。已保存的引擎和模型会保留；新安装才自动选择硬件方案。AMD/Intel 使用 Vulkan，无需安装 PyTorch ROCm。
 
-工具安装在 `.runtime`、Python 包安装在 `.venv`，不会修改全局 PATH 或注册表。首次下载模型可能需要数分钟，并占用数百 MB 至数 GB；后续启动复用本地内容。下载中断后重新启动即可重试。
+工具安装在 `.runtime`、默认 Python 包安装在 `.venv`，不会修改全局 PATH 或注册表。普通启动先准备基础环境和应用，再启动服务；模型在后台下载，界面会显示进度，任务等待所选模型准备完成。首次下载可能需要数分钟，并占用数百 MB 至数 GB；后续复用本地内容，下载中断可在界面重试。
 
 ## 快速开始
 
@@ -61,7 +61,7 @@ cd whisper-studio-webui
 .\start-webui.bat
 ```
 
-也可以在资源管理器中双击 `start-webui.bat`。首次自动准备环境、模型、构建生产版本，然后打开 [http://127.0.0.1:4317](http://127.0.0.1:4317)。之后会检测依赖是否完整；`git pull` 更新依赖或源码后，自动安装所需变更并重新构建。
+也可以在资源管理器中双击 `start-webui.bat`。首次自动准备基础环境并构建生产版本，然后打开 [http://127.0.0.1:4317](http://127.0.0.1:4317)，模型准备在服务启动后进行。之后会检测依赖是否完整；`git pull` 更新依赖或源码后，自动安装所需变更并重新构建。
 
 Linux：
 
@@ -87,12 +87,12 @@ npm run dev
 - `--backend=whisper.cpp`：选择原生后端，也可指定 `faster-whisper`、`whisper`；
 - `--model=tiny`：指定并保存模型；不传时保留已有设置或自动选择；
 - `--setup-only`：完成环境、模型和构建后退出；
-- `--skip-model`：暂不下载模型，首次转写可能需要下载；原生后端需再次 setup；
+- `--skip-model`：跳过启动时模型预下载，提交任务时按需下载；
 - `--repair`：重新安装依赖；`--rebuild`：强制重建应用；
 - `--no-browser`：启动后不打开界面；
 - `--skip-setup`：跳过环境检查，仅适用于已经手动准备完整环境的使用者。
 
-已有虚拟环境无法启动时，安装器先保留到 `.runtime/venv-backups` 再重建。自定义 Python 必须可运行 Python 3.14+；若指定无效路径会提示修正，不覆盖它。可以指定创建虚拟环境的解释器：
+已有虚拟环境无法启动时，安装器先保留到 `.runtime/venv-backups` 再重建。自动创建的环境使用 Python 3.14；可用的现有或自定义 Python 3.10+ 会保留，并在所选环境中检查和安装后端依赖。若自定义路径无效会提示修正，不覆盖它。可以指定创建虚拟环境的解释器：
 
 ```powershell
 $env:WHISPER_BOOTSTRAP_PYTHON="C:\Path\To\python.exe"
@@ -159,7 +159,7 @@ npm run setup -- --with-faster-cuda
 
 ### AMD 和 Intel
 
-在设置中选择 `whisper.cpp`，然后重新运行启动脚本，或直接传 `--backend=whisper.cpp`。安装器下载项目预编译的原生运行包与经 SHA256 校验的 GGML 模型。模型包括 tiny/base/small/medium、large-v1/v2/v3 和 turbo，支持 `.en` 的模型限英语；distil 模型属于 faster-whisper，不能用于原生后端。
+在设置中选择 `whisper.cpp`，保存后会自动准备所选模型，无需重启；也可启动时传 `--backend=whisper.cpp`。项目下载预编译的原生运行包与经 SHA256 校验的 GGML 模型。模型包括 tiny/base/small/medium、large-v1/v2/v3 和 turbo，支持 `.en` 的模型限英语；distil 模型属于 faster-whisper，不能用于原生后端。多个已下载模型可以共存；切换回本地已有模型会复用缓存。
 
 原生包通过本仓库 GitHub Actions 从官方 whisper.cpp 源码构建，并发布在[公开运行包页面](https://github.com/sheno4/whisper-studio-webui/releases/tag/whisper-runtime-v1.9.4)。克隆项目和下载运行包不需要 GitHub 登录；安装器优先使用公开下载直链，不依赖 GitHub API 配额。私有仓库镜像仍可复用 Git Credential Manager、`gh` 登录，或读取 `WHISPER_GITHUB_TOKEN`。无法访问项目 GPU 包时，Windows/Linux 尝试官方 CPU 包。显式选择原生后端且没有兼容包时会说明错误。可用 `WHISPER_CPP_PATH` 指定自己的 CLI，`WHISPER_CPP_MODEL_DIR` 指定 GGML 模型目录。
 
@@ -220,7 +220,7 @@ npm run setup     # 创建 .venv 并安装默认 Python 依赖
 
 - Python 显示不可用：重新运行 `start-webui.bat` 或 `sh ./start-webui.sh`；自定义解释器在设置中修正路径。
 - FFmpeg 显示不可用：重新运行启动脚本，自动修复便携工具；自定义环境需同时提供 ffmpeg 和 ffprobe。
-- 首次转写较慢：Whisper 模型正在下载和初始化。
+- 首次转写或切换模型后等待：界面显示所选模型下载进度；任务会等待下载完成，失败后可重试，无需重启服务。
 - CUDA 启动失败：`faster-whisper` 会尝试其他计算模式；也可以使用 CPU。
 - 抖音公开链接解析失败：重新启动以自动准备 Chromium；Linux 若提示缺少共享库，需要按发行版安装浏览器基础库。非标准位置可设置 `WHISPER_CHROMIUM_PATH`。
 - 其他链接下载失败：升级 `yt-dlp`，并检查站点是否要求登录或 Cookie。

@@ -11,11 +11,13 @@ const code = buildSync({
     contents: [
       "export { useWhisperWorkspace } from './src/renderer/hooks/useWhisperWorkspace';",
       "export { useDesktopSnapshot } from './src/renderer/hooks/useDesktopSnapshot';",
-      "export { useWorkspaceSelection } from './src/renderer/hooks/useWorkspaceSelection';"
+      "export { useWorkspaceSelection } from './src/renderer/hooks/useWorkspaceSelection';",
+      "export { default as ModelPreparationPanel } from './src/renderer/components/ModelPreparationPanel';",
+      "export { default as SettingsModal } from './src/renderer/components/SettingsModal';"
     ].join('\n'),
     resolveDir: fileURLToPath(new URL('..', import.meta.url))
   },
-  bundle: true, platform: 'node', format: 'cjs', external: ['react'], write: false
+  bundle: true, platform: 'node', format: 'cjs', external: ['react', 'framer-motion'], write: false
 }).outputFiles[0].text;
 
 const deferred = () => {
@@ -28,7 +30,7 @@ const emptySnapshot = { settings: { translateByDefault: false, translationServic
 
 // Unit-test the actual hook callbacks without a browser, image renderer, or DOM
 // dependency. This scheduler implements state/effect ordering and cleanup only.
-function mountHook(name, api, initialArgs = []) {
+function mountHook(name, api, initialArgs = [], runtime = {}) {
   const slots = [];
   let cursor = 0;
   let dirty = true;
@@ -64,10 +66,15 @@ function mountHook(name, api, initialArgs = []) {
     }
   };
   const module = { exports: {} };
-  const window = { whisperWeb: api, setTimeout: () => 1, clearTimeout() {} };
+  const window = { whisperWeb: api, setTimeout: () => 1, clearTimeout() {}, addEventListener() {}, removeEventListener() {} };
   vm.runInNewContext(code, { module, exports: module.exports, require: (id) => {
+    if (id === 'react/jsx-runtime') {
+      const jsx = (type, props) => ({ type, props });
+      return { jsx, jsxs: jsx, Fragment: 'fragment' };
+    }
+    if (id === 'framer-motion') return { motion: new Proxy({}, { get: (_, name) => name }) };
     assert.equal(id, 'react'); return react;
-  }, window, crypto, console, URL, navigator: {} });
+  }, window, crypto, console, URL, Error, navigator: {}, ...runtime });
   const flush = () => {
     let renders = 0;
     while (dirty) {
@@ -96,6 +103,99 @@ function workspaceApi(overrides = {}) {
     ...overrides
   };
 }
+
+function elements(tree) {
+  if (Array.isArray(tree)) return tree.flatMap(elements);
+  return tree && typeof tree === 'object' && tree.props ? [tree, ...elements(tree.props.children)] : [];
+}
+
+const selectedModelSettings = { pythonPath: 'selected-python', transcriptionEngine: 'whisper.cpp', whisperModel: 'turbo' };
+
+test('model panel preserves other downloads, matches the Python environment, and shows only reported progress', () => {
+  const states = [
+    { id: 'download', pythonPath: 'other-python', engine: 'faster-whisper', model: 'small', status: 'preparing', message: '正在下载', percent: 25, downloadedBytes: 52428800, totalBytes: 209715200 },
+    { id: 'current', pythonPath: 'selected-python', engine: 'whisper.cpp', model: 'large-v3-turbo', status: 'ready', message: '就绪' },
+    { id: 'other-environment', pythonPath: 'other-python', engine: 'whisper.cpp', model: 'large-v3-turbo', status: 'failed', error: 'wrong environment', message: '失败' }
+  ];
+  const hook = mountHook('ModelPreparationPanel', {}, [{ settings: selectedModelSettings, preparations: states }]);
+  const nodes = elements(hook.current);
+  const rows = nodes.filter((node) => node.type === 'article');
+  assert.equal(rows.length, 2);
+  assert.equal(nodes.find((node) => node.type === 'progress').props.value, 25);
+  assert.ok(nodes.some((node) => node.type === 'small' && node.props.children === '25% · 50.0 MB / 200.0 MB'));
+  assert.ok(nodes.some((node) => node.props.className?.includes('row--ready')));
+  assert.ok(!JSON.stringify(hook.current).includes('wrong environment'));
+  hook.update({ settings: selectedModelSettings, preparations: [{ ...states[0], percent: undefined, downloadedBytes: undefined, totalBytes: undefined }, states[1]] });
+  assert.equal(elements(hook.current).find((node) => node.type === 'progress').props.value, undefined);
+  hook.dispose();
+});
+
+test('model panel retry failures stay visible and a late request response cannot replace streamed progress', async () => {
+  const pending = deferred();
+  let requests = 0;
+  const failed = { id: 'failed', pythonPath: 'selected-python', engine: 'whisper.cpp', model: 'large-v3-turbo', status: 'failed', message: '断网' };
+  const hook = mountHook('ModelPreparationPanel', {
+    prepareModel: () => ++requests === 1 ? Promise.reject(new Error('download unavailable')) : pending.promise
+  }, [{ settings: selectedModelSettings, preparations: [failed] }]);
+  elements(hook.current).find((node) => node.type === 'button').props.onClick();
+  await hook.settle();
+  assert.equal(elements(hook.current).find((node) => node.props.role === 'alert').props.children, 'download unavailable');
+  elements(hook.current).find((node) => node.type === 'button').props.onClick();
+  const preparing = { ...failed, id: 'retry', status: 'preparing', percent: 72 };
+  hook.update({ settings: selectedModelSettings, preparations: [preparing] });
+  pending.resolve({ ...preparing, status: 'queued', percent: undefined });
+  await hook.settle();
+  assert.equal(elements(hook.current).find((node) => node.type === 'progress').props.value, 72);
+  hook.update({ settings: selectedModelSettings, preparations: [{ ...failed, id: 'retry-elsewhere' }] });
+  assert.equal(elements(hook.current).filter((node) => node.type === 'article').length, 1);
+  assert.ok(!elements(hook.current).some((node) => node.type === 'progress'));
+  hook.dispose();
+});
+
+test('model panel cancellation reports errors instead of claiming a completed cancellation', async () => {
+  let cancelledId;
+  const hook = mountHook('ModelPreparationPanel', {
+    cancelModelPreparation: async (id) => { cancelledId = id; return false; }
+  }, [{ settings: selectedModelSettings, preparations: [{
+    id: 'active-model', pythonPath: 'selected-python', engine: 'whisper.cpp', model: 'large-v3-turbo', status: 'preparing', message: '下载中'
+  }] }]);
+  elements(hook.current).find((node) => node.type === 'button').props.onClick();
+  await hook.settle();
+  assert.equal(cancelledId, 'active-model');
+  assert.match(elements(hook.current).find((node) => node.props.role === 'alert').props.children, /状态已更新/);
+  assert.ok(elements(hook.current).some((node) => node.type === 'progress'));
+  hook.dispose();
+});
+
+test('settings drafts survive background snapshots and saving keeps model progress open', async () => {
+  const settings = { ...emptySnapshot.settings, pythonPath: 'python', outputDir: 'outputs', transcriptionEngine: 'faster-whisper', whisperModel: 'tiny', keepAudio: true, logLevel: 'info', debugMode: false };
+  let closed = 0;
+  let saved;
+  const props = { settings, onClose: () => closed++, onSave: async (payload) => { saved = payload; }, onPickDirectory: async () => null, onPickWallpaper: async () => null };
+  const hook = mountHook('SettingsModal', {}, [props]);
+  elements(hook.current).find((node) => node.type === 'select' && node.props.value === 'tiny').props.onChange({ target: { value: 'small' } });
+  hook.update({ ...props, settings: { ...settings, whisperModel: 'base' }, modelPreparations: [{ status: 'preparing' }] });
+  assert.ok(elements(hook.current).some((node) => node.type === 'select' && node.props.value === 'small'));
+  elements(hook.current).find((node) => node.type === 'button' && node.props.children === '保存设置').props.onClick();
+  await hook.settle();
+  assert.equal(saved.whisperModel, 'small');
+  assert.equal(closed, 0);
+  hook.dispose();
+});
+
+test('saving settings from LAN HTTP succeeds without a secure-context randomUUID', async () => {
+  let saved = 0;
+  const hook = mountHook('useWhisperWorkspace', workspaceApi({
+    saveSettings: async () => { saved++; return { translateByDefault: true }; }
+  }), [], { crypto: { getRandomValues: crypto.getRandomValues.bind(crypto) } });
+  await hook.settle();
+  await hook.current.saveSettings({});
+  assert.equal(saved, 1);
+  assert.equal(hook.current.composer.translateNext, true);
+  assert.equal(hook.current.toasts.at(-1).title, '设置已保存');
+  assert.equal(hook.current.toasts.at(-1).tone, 'success');
+  hook.dispose();
+});
 
 test('busy drag/drop is rejected before uploading and gives an explicit retry message', async () => {
   const pending = deferred();

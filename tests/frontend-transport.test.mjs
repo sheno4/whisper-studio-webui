@@ -1,22 +1,32 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import vm from 'node:vm';
 
 const require = createRequire(import.meta.url);
-const { transformSync } = createRequire(require.resolve('tsx'))('esbuild');
+const { buildSync } = createRequire(require.resolve('tsx'))('esbuild');
 const source = fs.readFileSync(new URL('../src/renderer/web-api.ts', import.meta.url), 'utf8');
-const code = transformSync(source.replace('import.meta.env.VITE_API_BASE', '""'), { loader: 'ts', format: 'cjs' }).code;
+const code = buildSync({
+  stdin: {
+    contents: source.replace('import.meta.env.VITE_API_BASE', '""'),
+    loader: 'ts',
+    resolveDir: fileURLToPath(new URL('../src/renderer', import.meta.url))
+  },
+  bundle: true, platform: 'browser', format: 'cjs', write: false
+}).outputFiles[0].text;
 
-function loadTransport(fetch, query = '') {
+function loadTransport(fetch, query = '', overrides = {}) {
   const clicked = [];
   const revoked = [];
   const events = [];
   class FakeEvents {
-    constructor() { events.push(this); }
-    addEventListener() {}
-    close() {}
+    static CLOSED = 2;
+    constructor() { this.readyState = 0; this.listeners = new Map(); events.push(this); }
+    addEventListener(name, listener) { this.listeners.set(name, listener); }
+    close() { this.readyState = FakeEvents.CLOSED; }
+    emit(name, data) { this.listeners.get(name)?.({ data: JSON.stringify(data) }); }
   }
   class FakeUrl extends URL {
     static createObjectURL() { return 'blob:audit-download'; }
@@ -26,13 +36,18 @@ function loadTransport(fetch, query = '') {
     location: { search: query, href: `http://127.0.0.1/${query}` },
     sessionStorage: { getItem: () => null, setItem: () => {} },
     history: { replaceState: () => {} },
-    setTimeout: (callback) => { callback(); }
+    setTimeout: (callback) => { callback(); },
+    ...overrides.window
   };
   const document = {
     body: { append() {} },
     createElement: () => ({ click() { clicked.push({ href: this.href, download: this.download }); }, remove() {} })
   };
-  vm.runInNewContext(code, { window, document, fetch, Headers, URL: FakeUrl, URLSearchParams, File, crypto, console, EventSource: FakeEvents });
+  vm.runInNewContext(code, {
+    window, document, fetch, Headers, URL: FakeUrl, URLSearchParams, File,
+    crypto: overrides.crypto ?? crypto, console: overrides.console ?? console,
+    EventSource: FakeEvents
+  });
   return { api: window.whisperWeb, clicked, revoked, events };
 }
 
@@ -96,5 +111,51 @@ test('a failed session can be retried and concurrent API calls share its new ses
   assert.equal(sessions, 2);
   assert.equal(snapshots, 2);
   assert.equal(transport.events.length, 1);
+  off();
+});
+
+test('LAN HTTP upload notifications work without randomUUID and ignore failed observers', async () => {
+  const errors = [];
+  const { api } = loadTransport(async (url) => url.includes('bad.wav')
+    ? Response.json({ error: 'rejected file' }, { status: 415 })
+    : Response.json({ path: 'successful-path' }), '', {
+    crypto: { getRandomValues: crypto.getRandomValues.bind(crypto) },
+    console: { error: (message) => errors.push(message) }
+  });
+  const received = [];
+  const offFailing = api.onToast(() => { throw new Error('render failed'); });
+  const offHealthy = api.onToast((toast) => received.push(toast));
+  const paths = await api.uploadFiles([new File(['audio'], 'good.wav'), new File(['audio'], 'bad.wav')]);
+  assert.deepEqual(Array.from(paths), ['successful-path']);
+  assert.equal(received.length, 1);
+  assert.match(received[0].id, /^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
+  assert.equal(errors.length, 1);
+  offFailing();
+  offHealthy();
+});
+
+test('blocked sessionStorage still permits authentication from the current URL', async () => {
+  const attempted = [];
+  const transport = loadTransport(async (url) => {
+    attempted.push(url);
+    return Response.json({ tasks: [] });
+  }, '?token=temporary-test-token', {
+    window: { sessionStorage: { getItem() { throw new Error('blocked storage'); } } }
+  });
+  await transport.api.getSnapshot();
+  assert.deepEqual(attempted, ['/api/session', '/api/snapshot']);
+});
+
+test('a request reconnects a permanently closed event stream', async () => {
+  const transport = loadTransport(async () => Response.json({ tasks: [] }));
+  const received = [];
+  const off = transport.api.onState((snapshot) => received.push(snapshot));
+  await transport.api.getSnapshot();
+  assert.equal(transport.events.length, 1);
+  transport.events[0].close();
+  await transport.api.getSnapshot();
+  assert.equal(transport.events.length, 2);
+  transport.events[1].emit('state', { tasks: ['updated'] });
+  assert.deepEqual(JSON.parse(JSON.stringify(received)), [{ tasks: ['updated'] }]);
   off();
 });

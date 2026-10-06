@@ -168,7 +168,7 @@ def _run_cli(
             return process.wait(), "\n".join(tail)
     except OSError as error:
         raise WhisperCppFailure(
-            "whisper_cpp_missing", "whisper.cpp 无法启动，请重新运行项目启动脚本以自动准备环境。", str(error),
+            "whisper_cpp_missing", "whisper.cpp 无法启动，请在模型准备面板重试，系统会检查并准备运行环境。", str(error),
         ) from error
 
 
@@ -181,13 +181,13 @@ def transcribe(
     executable = cli_path(project_root)
     if not executable.is_file():
         raise WhisperCppFailure(
-            "whisper_cpp_missing", "whisper.cpp 未安装，请重新运行项目启动脚本以自动准备环境。", str(executable),
+            "whisper_cpp_missing", "whisper.cpp 尚未安装，请在模型准备面板重试，系统会自动准备运行环境。", str(executable),
         )
     model = model_path(model_name, project_root)
     if not model.is_file() or model.stat().st_size == 0:
         raise WhisperCppFailure(
             "whisper_cpp_model_missing",
-            f"whisper.cpp 模型 {model_name} 尚未下载。请保存设置并重新运行启动脚本，系统会自动准备所选模型。",
+            f"whisper.cpp 模型 {model_name} 尚未准备完成。请在模型准备面板下载或重试，完成后即可转写，无需重启。",
             str(model),
         )
     ffmpeg = shutil.which("ffmpeg")
