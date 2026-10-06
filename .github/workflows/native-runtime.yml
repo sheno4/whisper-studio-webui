@@ -79,7 +79,8 @@ jobs:
               -DCMAKE_BUILD_TYPE=Release -DSHADERC_SKIP_TESTS=ON \
               -DSHADERC_SKIP_EXAMPLES=ON -DSHADERC_SKIP_COPYRIGHT_CHECK=ON \
               -DSHADERC_ENABLE_WERROR_COMPILE=OFF
-            cmake --build sdk/build-shaderc --target glslc --parallel 4
+            cmake --build sdk/build-shaderc --target glslc_exe --parallel 4
+            test -x "$GITHUB_WORKSPACE/sdk/build-shaderc/glslc/glslc"
             printf '%s\n' "$GITHUB_WORKSPACE/sdk/build-shaderc/glslc" >> "$GITHUB_PATH"
           fi
 
@@ -187,9 +188,10 @@ jobs:
           if (-not (Test-Path 'stage/bin/ggml-vulkan.dll')) { throw 'Missing Vulkan backend DLL' }
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
           $vs = & $vswhere -latest -products '*' -property installationPath
-          $crt = Get-ChildItem -LiteralPath (Join-Path $vs 'VC/Redist/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $crt = Get-ChildItem -LiteralPath (Join-Path $vs 'VC/Redist/MSVC') -Recurse -Directory -Filter 'Microsoft.VC*.CRT' |
+            Where-Object { $_.Parent.Name -eq 'x64' } | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $crt) { throw 'Cannot locate the Microsoft CRT redist directory' }
-          Get-ChildItem -Path (Join-Path $crt.FullName 'x64/Microsoft.VC*.CRT/*.dll') | Copy-Item -Destination $bin.FullName
+          Get-ChildItem -LiteralPath $crt.FullName -Filter '*.dll' | Copy-Item -Destination $bin.FullName
           Copy-Item -LiteralPath 'source/LICENSE' -Destination 'stage/LICENSE-whisper.cpp'
           # whisper.cpp includes ggml under the root ggml authors MIT license.
           @{
