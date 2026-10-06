@@ -129,6 +129,52 @@ test('a CPU fallback is retained during an outage and upgraded when the GPU rele
   assert.equal(downloads, 1);
 });
 
+test('public releases use anonymous download URLs without credentials or the GitHub API', async (t) => {
+  const root = await fixture(t);
+  const asset = whisperCppAsset('win32', 'x64');
+  const releaseBase = `https://github.com/sheno4/whisper-studio-webui/releases/download/${WHISPER_CPP_RELEASE_TAG}`;
+  const calls = [];
+  const tools = runtime({
+    source: undefined,
+    run: async (command) => {
+      assert.ok(!['gh', 'git'].includes(command), 'Public downloads must not inspect GitHub credentials');
+      return probe(command);
+    },
+    fetch: async (url, options) => {
+      calls.push({ url, authorization: options.headers.Authorization });
+      assert.notEqual(new URL(url).hostname, 'api.github.com');
+      if (url === `${releaseBase}/SHA256SUMS`) return new Response(null, { status: 302, headers: { location: 'https://release-assets.githubusercontent.com/checksums' } });
+      if (url.endsWith('/checksums')) return new Response(`${sha256}  ${asset.filename}\n`);
+      if (url === `${releaseBase}/${asset.filename}`) return new Response(null, { status: 302, headers: { location: 'https://release-assets.githubusercontent.com/runtime' } });
+      if (url.endsWith('/runtime')) return new Response(bytes);
+      throw new Error('Unexpected fixture URL');
+    }
+  });
+  assert.equal((await tools.ensureWhisperCpp(root, { WHISPER_GITHUB_TOKEN: 'unused-private-token' })).variant, 'vulkan');
+  assert.equal(calls.length, 4);
+  assert.ok(calls.every((call) => call.authorization === undefined));
+});
+
+test('invalid public checksums never trigger a private API or credential fallback', async (t) => {
+  const root = await fixture(t);
+  await existing(root, 'cpu');
+  const calls = [];
+  const tools = runtime({
+    source: undefined,
+    run: async (command) => {
+      assert.ok(!['gh', 'git'].includes(command), 'Invalid metadata must not trigger credential discovery');
+      return probe(command);
+    },
+    fetch: async (url) => {
+      calls.push(url);
+      assert.ok(url.endsWith('/SHA256SUMS'));
+      return new Response('invalid publisher metadata');
+    }
+  });
+  assert.equal((await tools.ensureWhisperCpp(root, {})).variant, 'cpu');
+  assert.equal(calls.length, 1);
+});
+
 test('GitHub authentication stays on GitHub when private release assets redirect to signed storage', async (t) => {
   const root = await fixture(t);
   const asset = whisperCppAsset('win32', 'x64');
@@ -140,6 +186,7 @@ test('GitHub authentication stays on GitHub when private release assets redirect
     logger: (message) => messages.push(message),
     fetch: async (url, options) => {
       calls.push({ url, authorization: options.headers.Authorization });
+      if (url.endsWith('/SHA256SUMS')) return new Response(null, { status: 404 });
       if (url.includes('/releases/tags/')) return Response.json({ assets: [
         { name: asset.filename, url: 'https://api.github.com/repos/example/native/releases/assets/1' },
         { name: 'SHA256SUMS', url: 'https://api.github.com/repos/example/native/releases/assets/2' }

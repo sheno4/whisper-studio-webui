@@ -161,7 +161,7 @@ npm run setup -- --with-faster-cuda
 
 在设置中选择 `whisper.cpp`，然后重新运行启动脚本，或直接传 `--backend=whisper.cpp`。安装器下载项目预编译的原生运行包与经 SHA256 校验的 GGML 模型。模型包括 tiny/base/small/medium、large-v1/v2/v3 和 turbo，支持 `.en` 的模型限英语；distil 模型属于 faster-whisper，不能用于原生后端。
 
-原生包通过本仓库 GitHub Actions 从官方 whisper.cpp 源码构建。当前仓库为私有仓库，克隆及下载这些包需要仓库权限；安装器可复用 Git Credential Manager、`gh` 登录，或读取 `WHISPER_GITHUB_TOKEN`。无法访问项目 GPU 包时，Windows/Linux 尝试官方 CPU 包。显式选择原生后端且没有兼容包时会说明错误。可用 `WHISPER_CPP_PATH` 指定自己的 CLI，`WHISPER_CPP_MODEL_DIR` 指定 GGML 模型目录。
+原生包通过本仓库 GitHub Actions 从官方 whisper.cpp 源码构建，并发布在[公开运行包页面](https://github.com/sheno4/whisper-studio-webui/releases/tag/whisper-runtime-v1.9.4)。克隆项目和下载运行包不需要 GitHub 登录；安装器优先使用公开下载直链，不依赖 GitHub API 配额。私有仓库镜像仍可复用 Git Credential Manager、`gh` 登录，或读取 `WHISPER_GITHUB_TOKEN`。无法访问项目 GPU 包时，Windows/Linux 尝试官方 CPU 包。显式选择原生后端且没有兼容包时会说明错误。可用 `WHISPER_CPP_PATH` 指定自己的 CLI，`WHISPER_CPP_MODEL_DIR` 指定 GGML 模型目录。
 
 ### Cookie
 

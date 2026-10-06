@@ -140,7 +140,27 @@ export function createWhisperCppRuntime(options = {}) {
     return value;
   };
 
+  const publisherChecksum = (checksumText, filename) => {
+    const matching = checksumText.split(/\r?\n/).map((line) => line.trim().match(/^([a-f\d]{64})\s+\*?(.+)$/i))
+      .filter((match) => match?.[2] === filename);
+    if (matching.length !== 1) throw new Error(`The publisher did not provide one SHA256 checksum for ${filename}.`);
+    return matching[0][1].toLowerCase();
+  };
+
   const projectSource = async (asset, env) => {
+    const publicBase = `https://github.com/${repository}/releases/download/${WHISPER_CPP_RELEASE_TAG}`;
+    try {
+      const checksumText = await readText(`${publicBase}/SHA256SUMS`, '');
+      return {
+        url: `${publicBase}/${asset.filename}`, filename: asset.filename,
+        sha256: publisherChecksum(checksumText, asset.filename), token: '',
+        variant: asset.variant, release: WHISPER_CPP_RELEASE_TAG
+      };
+    } catch (error) {
+      // Public releases do not require credentials or the GitHub API quota.
+      // Only an access failure can justify trying the private release API.
+      if (![401, 403, 404].includes(error.status)) throw error;
+    }
     const token = await getToken(env);
     const apiBase = `https://api.github.com/repos/${repository}/releases/tags/${WHISPER_CPP_RELEASE_TAG}`;
     const release = JSON.parse(await readText(apiBase, token, 'application/vnd.github+json'));
@@ -152,10 +172,7 @@ export function createWhisperCppRuntime(options = {}) {
       throw error;
     }
     const checksumText = await readText(sums.url, token);
-    const matching = checksumText.split(/\r?\n/).map((line) => line.trim().match(/^([a-f\d]{64})\s+\*?(.+)$/i))
-      .filter((match) => match?.[2] === asset.filename);
-    if (matching.length !== 1) throw new Error(`The publisher did not provide one SHA256 checksum for ${asset.filename}.`);
-    return { url: bundle.url, filename: asset.filename, sha256: matching[0][1].toLowerCase(), token, variant: asset.variant, release: WHISPER_CPP_RELEASE_TAG };
+    return { url: bundle.url, filename: asset.filename, sha256: publisherChecksum(checksumText, asset.filename), token, variant: asset.variant, release: WHISPER_CPP_RELEASE_TAG };
   };
 
   const publishedSource = async (asset, env) => {
@@ -305,11 +322,11 @@ export function createWhisperCppRuntime(options = {}) {
         }
         source = publicCpuSource();
         if (!source) {
-          const unavailable = new Error('The native runtime is not accessible. Sign in to GitHub CLI, clone this private repository with HTTPS credentials, set WHISPER_GITHUB_TOKEN with repository read permission, or set WHISPER_CPP_PATH. The Python CPU backend remains available.');
+          const unavailable = new Error('The native runtime could not be downloaded. Check connectivity and the release assets, or set WHISPER_CPP_PATH. Private repositories additionally require GitHub CLI authentication, HTTPS clone credentials, or WHISPER_GITHUB_TOKEN with repository read permission. The Python CPU backend remains available.');
           unavailable.code = 'WHISPER_CPP_RUNTIME_UNAVAILABLE';
           throw unavailable;
         }
-        log('The project GPU runtime is not accessible yet. Installing the public CPU runtime; sign in to GitHub for the automatic GPU upgrade.');
+        log('The project GPU runtime is currently unavailable. Installing the public CPU runtime; a later launch will retry the automatic GPU upgrade.');
       }
     }
     if (options.source && asset.variant === 'cpu') source = await options.source(asset, env);
