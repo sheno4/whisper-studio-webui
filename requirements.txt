@@ -1,0 +1,5 @@
+# Default transcription backend and download/runtime dependencies.
+faster-whisper>=1.2.1,<2
+yt-dlp[default]>=2026.8.19
+requests>=2.34.2,<3
+websocket-client>=1.9.2,<2

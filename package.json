@@ -1,0 +1,45 @@
+{
+  "name": "whisper-studio",
+  "version": "0.1.0",
+  "description": "Local-first WebUI for downloading, transcribing, and translating media with Whisper.",
+  "author": "Whisper Studio contributors",
+  "license": "MIT",
+  "main": "dist-server/server/index.js",
+  "scripts": {
+    "clean": "rimraf dist dist-server",
+    "dev": "concurrently -k -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:web": "vite",
+    "launch": "node scripts/launch.mjs",
+    "build": "npm run clean && npm run build:web && npm run build:server",
+    "build:web": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "test": "node scripts/test.mjs",
+    "setup": "node scripts/setup.mjs",
+    "start": "node dist-server/server/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "framer-motion": "^13.2.0",
+    "openai": "^7.9.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.4.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "rimraf": "^6.1.3",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

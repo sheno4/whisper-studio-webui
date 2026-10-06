@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "rootDir": "src",
+    "outDir": "dist-server",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "lib": ["ES2022"]
+  },
+  "include": [
+    "src/server/**/*",
+    "src/main/environment.ts",
+    "src/main/logger.ts",
+    "src/main/ollama.ts",
+    "src/main/openai.ts",
+    "src/main/paths.ts",
+    "src/main/process.ts",
+    "src/main/store.ts",
+    "src/main/system.ts",
+    "src/main/task-manager.ts",
+    "src/shared/**/*"
+  ]
+}
