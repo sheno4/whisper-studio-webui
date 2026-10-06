@@ -85,6 +85,38 @@ test('native setup shares runtime lock and preserves existing model when downloa
   assert.equal(await fs.readFile(model, 'utf8'), 'downloaded model fixture');
 });
 
+test('native backend in a new custom Python installs missing common dependencies before runtime and model preparation', async (t) => {
+  const { request, options, calls, model } = await fixture(t);
+  request.engine = 'whisper.cpp';
+  const originalRun = options.run;
+  let commonReady = false;
+  const order = [];
+  options.run = async (command, args, configuration) => {
+    if (args.some((argument) => argument.includes('import yt_dlp,requests,websocket'))) {
+      order.push('common-probe');
+      calls.push({ command, args, configuration });
+      return { status: commonReady ? 0 : 1, stdout: '', stderr: commonReady ? '' : 'missing yt_dlp' };
+    }
+    if (args.includes('pip') && args.includes('install')) {
+      order.push('common-install'); commonReady = true;
+      calls.push({ command, args, configuration });
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    if (args.some((argument) => argument.endsWith('model_download.py'))) order.push('model');
+    return originalRun(command, args, configuration);
+  };
+  options.ensureWhisperCpp = async () => { assert.equal(commonReady, true); order.push('native'); };
+  assert.equal((await prepareModel(request, options)).path, model);
+  const install = calls.filter((call) => call.args.includes('pip') && call.args.includes('install'));
+  assert.equal(install.length, 1);
+  assert.equal(install[0].command, 'user-selected-python');
+  assert.ok(install[0].args.some((argument) => argument.endsWith('requirements-common.txt')));
+  assert.ok(!install[0].args.some((argument) => /requirements(?:-whisper|-faster-cuda)?\.txt$/.test(argument)));
+  assert.deepEqual(order, ['common-probe', 'common-install', 'common-probe', 'native', 'model']);
+  await prepareModel(request, options);
+  assert.equal(calls.filter((call) => call.args.includes('pip') && call.args.includes('install')).length, 1);
+});
+
 test('invalid interpreter fails without silently using another environment', async (t) => {
   const { request, options } = await fixture(t);
   options.run = async () => ({ status: null, error: new Error('ENOENT'), stdout: '', stderr: '' });

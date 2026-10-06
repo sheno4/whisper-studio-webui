@@ -122,8 +122,9 @@ export async function prepareModel(request, options = {}) {
     const gpu = await invoke('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader'], { timeout: 10_000 });
     cuda = !gpu.error && gpu.status === 0 && Boolean(gpu.stdout.trim());
   }
-  const imports = request.engine === 'whisper' ? 'import whisper,torch' : request.engine === 'faster-whisper'
-    ? 'import faster_whisper,ctranslate2,av,onnxruntime' + (cuda ? "\nimport importlib.metadata as _m\n_m.version('nvidia-cublas-cu12')\n_m.version('nvidia-cudnn-cu12')" : '') : 'import sys';
+  const engineImports = request.engine === 'whisper' ? 'import whisper,torch' : request.engine === 'faster-whisper'
+    ? 'import faster_whisper,ctranslate2,av,onnxruntime' + (cuda ? "\nimport importlib.metadata as _m\n_m.version('nvidia-cublas-cu12')\n_m.version('nvidia-cudnn-cu12')" : '') : '';
+  const imports = 'import yt_dlp,requests,websocket\n' + engineImports;
   const probeImports = () => invoke(pythonPath, ['-X', 'utf8', '-c', dllPrelude + imports], { timeout: 45_000 });
   let pythonLibraryDirs = [];
   const prepareLibraries = async () => {
@@ -137,12 +138,12 @@ export async function prepareModel(request, options = {}) {
     if (libraries.length) env.LD_LIBRARY_PATH = [...new Set([...libraries, ...(env.LD_LIBRARY_PATH || '').split(':').filter(Boolean)])].join(':');
   };
   await prepareLibraries();
-  if (request.engine !== 'whisper.cpp') {
-    await withRuntimeLock(root, `python:${pythonPath}`, async () => {
+  await withRuntimeLock(root, `python:${pythonPath}`, async () => {
       let installed = await probeImports();
       if (installed.error || installed.status !== 0) {
         event({ type: 'progress', message: `正在为所选 Python 安装 ${request.engine} 依赖` });
-        const requirements = request.engine === 'whisper' ? 'requirements-whisper.txt' : cuda ? 'requirements-faster-cuda.txt' : 'requirements.txt';
+        const requirements = request.engine === 'whisper.cpp' ? 'requirements-common.txt'
+          : request.engine === 'whisper' ? 'requirements-whisper.txt' : cuda ? 'requirements-faster-cuda.txt' : 'requirements.txt';
         const pip = await invoke(pythonPath, ['-m', 'pip', '--version'], { timeout: 15_000 });
         if (pip.error || pip.status !== 0) {
           const bootstrap = await invoke(pythonPath, ['-m', 'ensurepip'], { timeout: 60_000 });
@@ -157,8 +158,8 @@ export async function prepareModel(request, options = {}) {
         installed = await probeImports();
         if (installed.error || installed.status !== 0) throw modelError('MODEL_DEPENDENCY_UNAVAILABLE', '所选引擎安装后仍无法导入，请检查 Python 环境和运行库后重试。');
       }
-    }, event, options.lockOptions);
-  } else {
+  }, event, options.lockOptions);
+  if (request.engine === 'whisper.cpp') {
     await withRuntimeLock(root, 'native:whisper.cpp', async () => {
       event({ type: 'progress', message: '正在检查 whisper.cpp 运行环境' });
       const ensure = options.ensureWhisperCpp ?? createWhisperCppRuntime({ logger: (message) => event({ type: 'progress', message }) }).ensureWhisperCpp;
