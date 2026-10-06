@@ -336,7 +336,7 @@ export const createWebServer = (taskManager: TaskManager, options: WebServerOpti
   const rendererDir = path.dirname(rendererIndex);
   if (fs.existsSync(rendererIndex)) {
     app.use(express.static(rendererDir, { index: false }));
-    app.get(/.*/, (_request, response) => response.sendFile(rendererIndex));
+    app.get(/.*/, (_request, response) => response.sendFile(rendererIndex, { dotfiles: 'allow' }));
   } else {
     app.get('/', (_request, response) => {
       response.status(503).type('text/plain').send('Web assets are missing. Run npm run build or use npm run dev.');
