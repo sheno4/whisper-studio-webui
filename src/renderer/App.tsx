@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import type { DragEvent, PointerEvent } from 'react';
-import { useRef } from 'react';
+import type { DragEvent } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 
 import ActivityPanel from './components/ActivityPanel';
 import AppFooter from './components/AppFooter';
@@ -16,17 +16,40 @@ import StartupState from './components/StartupState';
 import TaskDetail from './components/TaskDetail';
 import ToastStack from './components/ToastStack';
 import { useWhisperWorkspace } from './hooks/useWhisperWorkspace';
-import { fadeUpVariants, staggerContainerVariants } from './motion';
+import { useAppearance } from './hooks/useAppearance';
+import { useInteractionModality } from './hooks/useInteractionModality';
+import { quickTransition } from './motion';
 
 function App(): React.JSX.Element {
   const workspace = useWhisperWorkspace();
+  const appearance = useAppearance();
+  useInteractionModality();
+  const [mobilePane, setMobilePane] = useState<'import' | 'tasks' | 'results'>('import');
+  const [importExpanded, setImportExpanded] = useState(true);
+  const focusResultAfterSelection = useRef(false);
   const dragDepth = useRef(0);
   const snapshot = workspace.snapshot;
 
-  function handlePointerMove(event: PointerEvent<HTMLElement>): void {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    event.currentTarget.style.setProperty('--pointer-x', `${event.clientX - bounds.left}px`);
-    event.currentTarget.style.setProperty('--pointer-y', `${event.clientY - bounds.top}px`);
+  useLayoutEffect(() => {
+    if (!focusResultAfterSelection.current) return;
+    focusResultAfterSelection.current = false;
+    document.getElementById('result-stage')?.focus({ preventScroll: true });
+  }, [mobilePane]);
+
+  function selectTask(taskId: string): void {
+    workspace.setSelectedTaskId(taskId);
+    if (window.matchMedia('(max-width: 900px)').matches) {
+      focusResultAfterSelection.current = true;
+      setMobilePane('results');
+    }
+  }
+
+  function selectHistory(historyId: string): void {
+    workspace.setSelectedHistoryId(historyId);
+    if (window.matchMedia('(max-width: 900px)').matches) {
+      focusResultAfterSelection.current = true;
+      setMobilePane('results');
+    }
   }
 
   function handleDragEnter(event: DragEvent<HTMLElement>): void {
@@ -61,68 +84,83 @@ function App(): React.JSX.Element {
       onDragLeave={handleDragLeave}
       onDragOver={(event) => event.preventDefault()}
       onDrop={handleDrop}
-      onPointerMove={handlePointerMove}
     >
+      <a className="skip-link" href="#workspace-content">跳转到工作台</a>
       <LiquidBackdrop wallpaperUrl={workspace.wallpaperUrl} />
 
       {snapshot ? (
-        <motion.div
-          animate="visible"
+        <div
           className="desktop-shell"
-          initial="hidden"
-          variants={staggerContainerVariants}
+          data-mobile-pane={mobilePane}
         >
           <AppHeader
+            appearance={appearance.appearance}
+            material={appearance.material}
             activeTaskCount={workspace.activeTaskCount}
             activeTranslationServiceId={snapshot.settings.activeTranslationServiceId}
             historyCount={snapshot.history.length}
             onChangeService={(serviceId) => void workspace.changeTranslationService(serviceId)}
             onOpenSettings={() => workspace.setSettingsOpen(true)}
+            onCycleAppearance={appearance.cycleAppearance}
+            onToggleMaterial={appearance.toggleMaterial}
             queueCount={snapshot.tasks.length}
             serviceBusy={workspace.savingServiceId !== null}
             translationServices={snapshot.settings.translationServices}
           />
 
-          <motion.div className="environment-slot" variants={fadeUpVariants}>
+          <div className="environment-slot">
             <EnvironmentBanner environment={snapshot.environment} />
             <ModelPreparationPanel preparations={snapshot.modelPreparations} settings={snapshot.settings} />
-          </motion.div>
+          </div>
 
-          <motion.section className="workspace-grid" variants={fadeUpVariants}>
-            <InputComposer
-              busy={workspace.composer.busy}
-              downloadBehavior={workspace.composer.downloadBehavior}
-              linkInput={workspace.composer.linkInput}
-              onAddLinks={() => void workspace.addLinks()}
-              onDownloadBehaviorChange={workspace.setDownloadBehavior}
-              onLinkInputChange={workspace.setLinkInput}
-              onPickFiles={() => void workspace.pickFiles()}
-              onToggleTranslate={workspace.setTranslateNext}
-              onTranscriptionLanguageChange={workspace.setTranscriptionLanguage}
-              onVideoQualityChange={workspace.setVideoQuality}
-              transcriptionLanguage={workspace.composer.transcriptionLanguage}
-              translateNext={workspace.composer.translateNext}
-              videoQuality={workspace.composer.videoQuality}
-            />
+          <section className="workspace-grid" id="workspace-content" aria-label="音视频工作台" tabIndex={-1}>
+            <aside className="workspace-sidebar" aria-label="导入与任务">
+              <details className="workspace-import" open={importExpanded} onToggle={(event) => setImportExpanded(event.currentTarget.open)}>
+                <summary className="workspace-import-toggle">
+                  <Icon name="upload" size={17} />
+                  <span>新建任务</span>
+                  <Icon className="workspace-import-caret" name="chevron-down" size={16} />
+                </summary>
+                <section className="import-stage" id="import-stage" aria-label="新建任务">
+                  <InputComposer
+                    busy={workspace.composer.busy}
+                    downloadBehavior={workspace.composer.downloadBehavior}
+                    linkInput={workspace.composer.linkInput}
+                    onAddLinks={() => void workspace.addLinks()}
+                    onDownloadBehaviorChange={workspace.setDownloadBehavior}
+                    onLinkInputChange={workspace.setLinkInput}
+                    onPickFiles={() => void workspace.pickFiles()}
+                    onToggleTranslate={workspace.setTranslateNext}
+                    onTranscriptionLanguageChange={workspace.setTranscriptionLanguage}
+                    onVideoQualityChange={workspace.setVideoQuality}
+                    transcriptionLanguage={workspace.composer.transcriptionLanguage}
+                    translateNext={workspace.composer.translateNext}
+                    videoQuality={workspace.composer.videoQuality}
+                  />
+                </section>
+              </details>
 
-            <ActivityPanel
-              history={snapshot.history}
-              onCancelTask={(taskId) => void workspace.cancelTask(taskId)}
-              onChangeView={workspace.setActivityView}
-              onClearHistory={workspace.requestClearHistory}
-              onRemoveHistory={(historyId) => void workspace.removeHistory(historyId)}
-              onRemoveTask={(taskId) => void workspace.removeTask(taskId)}
-              onRetryTask={(taskId) => void workspace.retryTask(taskId)}
-              onRevealHistory={(targetPath) => void workspace.revealPath(targetPath)}
-              onSelectHistory={workspace.setSelectedHistoryId}
-              onSelectTask={workspace.setSelectedTaskId}
-              selectedHistoryId={workspace.activity.selectedHistoryId}
-              selectedTaskId={workspace.activity.selectedTaskId}
-              tasks={snapshot.tasks}
-              view={workspace.activity.view}
-            />
+              <section className="activity-stage" id="activity-stage" aria-label="任务中心">
+                <ActivityPanel
+                  history={snapshot.history}
+                  onCancelTask={(taskId) => void workspace.cancelTask(taskId)}
+                  onChangeView={workspace.setActivityView}
+                  onClearHistory={workspace.requestClearHistory}
+                  onRemoveHistory={(historyId) => void workspace.removeHistory(historyId)}
+                  onRemoveTask={(taskId) => void workspace.removeTask(taskId)}
+                  onRetryTask={(taskId) => void workspace.retryTask(taskId)}
+                  onRevealHistory={(targetPath) => void workspace.revealPath(targetPath)}
+                  onSelectHistory={selectHistory}
+                  onSelectTask={selectTask}
+                  selectedHistoryId={workspace.activity.selectedHistoryId}
+                  selectedTaskId={workspace.activity.selectedTaskId}
+                  tasks={snapshot.tasks}
+                  view={workspace.activity.view}
+                />
+              </section>
+            </aside>
 
-            <section className="result-stage">
+            <section className="result-stage" id="result-stage" aria-label="任务结果" tabIndex={-1}>
               <TaskDetail
                 historyRecord={workspace.activity.activeHistoryRecord}
                 onCopy={(text, label) => void workspace.copyText(text, label)}
@@ -135,12 +173,35 @@ function App(): React.JSX.Element {
                 task={workspace.activity.activeTask}
               />
             </section>
-          </motion.section>
+          </section>
 
-          <motion.div variants={fadeUpVariants}>
+          <div className="footer-slot">
             <AppFooter {...workspace.footer} />
-          </motion.div>
-        </motion.div>
+          </div>
+          <nav className="mobile-workspace-nav glass-chrome" aria-label="工作台区域">
+            {([
+              { value: 'import', label: '新任务', icon: 'upload', target: 'import-stage' },
+              { value: 'tasks', label: '任务', icon: 'queue', target: 'activity-stage' },
+              { value: 'results', label: '结果', icon: 'file', target: 'result-stage' }
+            ] as const).map((item) => (
+              <button
+                aria-controls={item.target}
+                aria-pressed={mobilePane === item.value}
+                className={mobilePane === item.value ? 'is-active' : ''}
+                key={item.value}
+                onClick={() => {
+                  setMobilePane(item.value);
+                  if (item.value === 'import') setImportExpanded(true);
+                }}
+                type="button"
+              >
+                <Icon name={item.icon} size={19} />
+                <span>{item.label}</span>
+                {item.value === 'tasks' && workspace.activeTaskCount > 0 ? <small>{workspace.activeTaskCount}</small> : null}
+              </button>
+            ))}
+          </nav>
+        </div>
       ) : (
         <StartupState error={workspace.loadError} onRetry={() => void workspace.reload()} />
       )}
@@ -170,10 +231,11 @@ function App(): React.JSX.Element {
 
         {workspace.isDragging ? (
           <motion.div
-            animate={{ opacity: 1, scale: 1 }}
+            animate={{ opacity: 1 }}
             className="drop-overlay"
-            exit={{ opacity: 0, scale: 0.98 }}
-            initial={{ opacity: 0, scale: 0.98 }}
+            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }}
+            transition={quickTransition}
             key="drop-overlay"
           >
             <div className="drop-card glass-float">

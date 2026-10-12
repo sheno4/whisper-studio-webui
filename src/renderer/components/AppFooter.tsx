@@ -13,7 +13,7 @@ function FooterItem({ children }: { children: ReactNode }): React.JSX.Element {
 
 function AppFooter({ context, title, message, timestamp }: AppFooterProps): React.JSX.Element {
   return (
-    <footer className="app-footer glass-chrome">
+    <footer className="app-footer">
       <FooterItem><strong>{context}</strong> · {title}</FooterItem>
       <FooterItem>{message}</FooterItem>
       <FooterItem>{timestamp}</FooterItem>

@@ -1,8 +1,5 @@
-import { AnimatePresence, motion } from 'framer-motion';
-
 import type { HistoryRecord, TaskRecord } from '../../shared/types';
 import type { ActivityView } from '../hooks/useWhisperWorkspace';
-import { paneSwitchVariants } from '../motion';
 import HistoryList from './HistoryList';
 import Icon from './Icon';
 import SegmentedControl from './SegmentedControl';
@@ -44,19 +41,18 @@ function ActivityPanel({
   const showingQueue = view === 'queue';
 
   return (
-    <section className="activity-shell glass-panel">
+    <section aria-labelledby="activity-panel-title" className="activity-shell content-panel">
       <header className="panel-header activity-header">
         <div className="panel-heading">
           <span className="panel-icon" aria-hidden="true">
             <Icon name={showingQueue ? 'queue' : 'history'} size={17} />
           </span>
           <div>
-            <p className="eyebrow">任务中心</p>
-            <h2>{showingQueue ? '当前队列' : '历史记录'}</h2>
+            <h2 id="activity-panel-title">任务中心</h2>
           </div>
         </div>
 
-        <div className="activity-toolbar">
+        <div className="activity-toolbar control-rail">
           {!showingQueue && history.length > 0 ? (
             <button className="text-action danger" onClick={onClearHistory} type="button">
               清空
@@ -77,15 +73,10 @@ function ActivityPanel({
       </header>
 
       <div className="activity-content">
-        <AnimatePresence initial={false} mode="wait">
           {showingQueue ? (
-            <motion.div
-              animate="active"
+            <div
               className="activity-pane"
-              exit="inactive"
-              initial="inactive"
               key="queue"
-              variants={paneSwitchVariants}
             >
               <TaskQueue
                 onCancel={onCancelTask}
@@ -95,15 +86,11 @@ function ActivityPanel({
                 selectedTaskId={selectedTaskId}
                 tasks={tasks}
               />
-            </motion.div>
+            </div>
           ) : (
-            <motion.div
-              animate="active"
+            <div
               className="activity-pane"
-              exit="inactive"
-              initial="inactive"
               key="history"
-              variants={paneSwitchVariants}
             >
               <HistoryList
                 history={history}
@@ -112,9 +99,8 @@ function ActivityPanel({
                 onSelect={onSelectHistory}
                 selectedHistoryId={selectedHistoryId}
               />
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
       </div>
     </section>
   );

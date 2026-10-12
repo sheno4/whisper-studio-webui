@@ -3,6 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 
 import App from './App';
+import { initializeAppearance } from './hooks/useAppearance';
 import './web-api';
 import './styles/app.css';
 
@@ -54,6 +55,7 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 try {
+  initializeAppearance();
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <React.StrictMode>
       <MotionConfig reducedMotion="user">

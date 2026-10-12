@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 import {
   FASTER_WHISPER_MODEL_OPTIONS,
@@ -17,11 +17,10 @@ import type {
   TranscriptionEngine,
   TranslationServiceInput
 } from '../../shared/types';
-import {
-  modalBackdropVariants,
-  modalPanelVariants,
-  paneSwitchVariants
-} from '../motion';
+import { useDialogInteraction } from '../hooks/useDialogInteraction';
+import { isKeyboardInteraction } from '../hooks/useInteractionModality';
+import { useReducedMotionPreference } from '../hooks/useReducedMotionPreference';
+import { getOverlayVariants } from '../motion';
 import { createRandomId, toCssFileUrl } from '../utils';
 import Icon, { type IconName } from './Icon';
 import ModelPreparationPanel from './ModelPreparationPanel';
@@ -181,19 +180,22 @@ function SettingsModal({
   const [operationError, setOperationError] = useState('');
   const [translationTestFeedback, setTranslationTestFeedback] = useState<TranslationTestFeedback>();
   const translationTestRequestId = useRef(0);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const initialFocusRef = useRef<HTMLButtonElement | null>(null);
+  const [keyboardMotion, setKeyboardMotion] = useState(isKeyboardInteraction);
+  const reducedMotion = useReducedMotionPreference();
   // Keep this draft until the dialog closes. Background snapshots, including
   // model progress and settings changed elsewhere, must not discard edits.
 
-  useEffect(() => {
-    const handleEscape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && !saving) {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [onClose, saving]);
+  const dismiss = (): void => {
+    setKeyboardMotion(isKeyboardInteraction());
+    onClose();
+  };
+  useDialogInteraction(panelRef, {
+    onDismiss: dismiss,
+    canDismiss: !saving && pendingPicker === null,
+    initialFocusRef
+  });
 
   const updateField = <K extends keyof SaveSettingsPayload>(
     key: K,
@@ -1098,21 +1100,23 @@ function SettingsModal({
       className="modal-backdrop settings-modal-backdrop"
       exit="exit"
       initial="hidden"
-      onMouseDown={(event) => {
-        if (event.currentTarget === event.target && !saving) {
-          onClose();
+      onPointerDown={(event) => {
+        if (event.currentTarget === event.target && !saving && !pickerBusy) {
+          dismiss();
         }
       }}
-      variants={modalBackdropVariants}
+      variants={getOverlayVariants('backdrop', reducedMotion, keyboardMotion)}
     >
       <motion.div
         aria-busy={saving || pickerBusy}
         aria-describedby="settings-modal-description"
         aria-labelledby="settings-modal-title"
         aria-modal="true"
-        className="settings-dialog glass-float"
+        className="settings-dialog glass-float glass-dialog"
+        ref={panelRef}
         role="dialog"
-        variants={modalPanelVariants}
+        tabIndex={-1}
+        variants={getOverlayVariants('panel', reducedMotion, keyboardMotion)}
       >
         <header className="settings-modal-header">
           <div className="settings-modal-heading">
@@ -1130,8 +1134,8 @@ function SettingsModal({
           <button
             aria-label="关闭设置"
             className="modal-close-button"
-            disabled={saving}
-            onClick={onClose}
+            disabled={saving || pickerBusy}
+            onClick={dismiss}
             type="button"
           >
             <Icon name="close" size={18} />
@@ -1154,6 +1158,7 @@ function SettingsModal({
                     key={item.id}
                     onClick={() => setTab(item.id)}
                     onKeyDown={(event) => handleTabKeyDown(event, index)}
+                    ref={index === 0 ? initialFocusRef : undefined}
                     role="tab"
                     tabIndex={isActive ? 0 : -1}
                     type="button"
@@ -1188,18 +1193,15 @@ function SettingsModal({
             </div>
 
             <div className="settings-content-viewport">
-              <motion.section
-                animate="active"
+              <section
                 aria-labelledby={`settings-tab-${tab}`}
                 className="settings-pane"
                 id={`settings-panel-${tab}`}
-                initial="inactive"
                 key={tab}
                 role="tabpanel"
-                variants={paneSwitchVariants}
               >
                 <div className="settings-pane-content">{renderActivePanel()}</div>
-              </motion.section>
+              </section>
             </div>
 
             <footer className="settings-modal-footer">
@@ -1218,7 +1220,7 @@ function SettingsModal({
               <button
                 className="ghost-button"
                 disabled={saving || pickerBusy}
-                onClick={onClose}
+                onClick={dismiss}
                 type="button"
               >
                 关闭

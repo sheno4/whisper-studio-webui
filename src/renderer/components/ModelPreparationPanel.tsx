@@ -79,7 +79,7 @@ function ModelPreparationPanel({ settings, preparations = [] }: ModelPreparation
   };
 
   return (
-    <section aria-label="转写模型" className="model-preparation-panel">
+    <section aria-label="转写模型" className="model-preparation-panel status-panel">
       <div className="model-preparation-list">
         {visible.map((state) => {
           const active = isPreparing(state);
@@ -94,7 +94,7 @@ function ModelPreparationPanel({ settings, preparations = [] }: ModelPreparation
           const message = normalizeUiText(state.status === 'failed' ? state.error || state.message : state.message);
           return (
             <article className={`model-preparation-row model-preparation-row--${state.status}`} key={state.id}>
-              <Icon name={state.status === 'ready' ? 'check' : state.status === 'failed' ? 'warning' : active ? 'download' : 'model'} size={17} />
+              <Icon aria-hidden="true" name={state.status === 'ready' ? 'check' : state.status === 'failed' ? 'warning' : active ? 'download' : 'model'} size={17} />
               <div className="model-preparation-copy">
                 <div className="model-preparation-heading">
                   <strong>{state.model}</strong>
@@ -105,7 +105,17 @@ function ModelPreparationPanel({ settings, preparations = [] }: ModelPreparation
                 {state.status !== 'ready' ? <p role="status">{message || statusLabel}</p> : null}
                 {active ? (
                   <div className="model-preparation-progress">
-                    <progress aria-label={`${state.model} 模型准备进度`} max={100} value={percent} />
+                    <div
+                      aria-label={`${state.model} 模型准备进度`}
+                      aria-valuemax={100}
+                      aria-valuemin={0}
+                      aria-valuenow={percent}
+                      aria-valuetext={formatProgressPercent(percent) ?? message ?? statusLabel}
+                      className={`model-preparation-track${percent === undefined ? ' is-indeterminate' : ''}`}
+                      role="progressbar"
+                    >
+                      <span aria-hidden="true" className="model-preparation-value progress-fill" style={{ transform: `scaleX(${(percent ?? 0) / 100})` }} />
+                    </div>
                     {percent !== undefined || bytes ? <small>{[formatProgressPercent(percent), bytes].filter(Boolean).join(' · ')}</small> : null}
                   </div>
                 ) : null}
@@ -124,7 +134,7 @@ function ModelPreparationPanel({ settings, preparations = [] }: ModelPreparation
         })}
         {!selected ? (
           <div className="model-preparation-row">
-            <Icon name="model" size={17} />
+            <Icon aria-hidden="true" name="model" size={17} />
             <div className="model-preparation-copy">
               <div className="model-preparation-heading"><strong>{settings.whisperModel}</strong><span>{settings.transcriptionEngine}</span><small>当前模型</small></div>
               <p>首次使用会自动准备模型，转写任务会等待模型就绪。</p>

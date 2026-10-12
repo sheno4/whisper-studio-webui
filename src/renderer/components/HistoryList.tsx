@@ -1,7 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
-
 import type { HistoryRecord } from '../../shared/types';
-import { fadeUpVariants, staggerContainerVariants } from '../motion';
 import {
   describeTaskLanguage,
   describeTaskMode,
@@ -123,23 +120,17 @@ const HistoryList = ({
 
   return (
     <section aria-label={`历史记录，共 ${history.length} 项`} className="history-list">
-      <motion.div
-        animate="visible"
+      <div
         aria-label="历史任务列表，按完成时间从新到旧排列"
         className="history-list__items"
-        initial="hidden"
         role="list"
-        variants={staggerContainerVariants}
       >
-        <AnimatePresence initial={false}>
           {groups.map((group) => (
-            <motion.section
+            <section
               aria-label={`${group.label}，${group.items.length} 项`}
               className="history-list__group"
               key={group.key}
-              layout
               role="group"
-              variants={fadeUpVariants}
             >
               <header className="history-list__group-header">
                 <h3>{group.label}</h3>
@@ -170,15 +161,12 @@ const HistoryList = ({
                   ].filter((value): value is string => Boolean(value));
 
                   return (
-                    <motion.article
+                    <article
                       aria-label={`${readableName}，${statusLabel}`}
                       className={`history-card${selected ? ' is-selected' : ''}`}
-                      exit="exit"
                       key={item.id}
-                      layout
                       onClick={() => onSelect(item.id)}
                       role="listitem"
-                      variants={fadeUpVariants}
                     >
                       <button
                         aria-label={`查看历史任务“${readableName}”，结果：${statusLabel}`}
@@ -196,7 +184,7 @@ const HistoryList = ({
                         </span>
                         <span className="history-card__content">
                           <span className="history-card__title-row">
-                            <strong title={readableName}>{truncate(readableName, 46)}</strong>
+                            <strong title={readableName}>{readableName}</strong>
                             <span
                               aria-label={`结果状态：${statusLabel}`}
                               className={`status-badge ${statusTones[item.status]}`}
@@ -262,14 +250,13 @@ const HistoryList = ({
                           <span>移除</span>
                         </button>
                       </div>
-                    </motion.article>
+                    </article>
                   );
                 })}
               </div>
-            </motion.section>
+            </section>
           ))}
-        </AnimatePresence>
-      </motion.div>
+      </div>
     </section>
   );
 };

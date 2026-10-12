@@ -1,8 +1,6 @@
-import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 
 import type { EnvironmentStatus } from '../../shared/types';
-import { fadeUpVariants } from '../motion';
 import { formatDateTime, normalizeUiText } from '../utils';
 import Icon from './Icon';
 
@@ -14,7 +12,9 @@ const detailsId = 'environment-details-popover';
 
 const EnvironmentBanner = ({ environment }: EnvironmentBannerProps): React.JSX.Element => {
   const [expanded, setExpanded] = useState(false);
+  const [pointerEntry, setPointerEntry] = useState(false);
   const shellRef = useRef<HTMLElement | null>(null);
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
   const failedItems = environment.items.filter((item) => !item.ok);
   const totalItems = environment.items.length;
   const readyItems = totalItems - failedItems.length;
@@ -34,6 +34,7 @@ const EnvironmentBanner = ({ environment }: EnvironmentBannerProps): React.JSX.E
     const closeOnEscape = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         setExpanded(false);
+        toggleRef.current?.focus();
       }
     };
 
@@ -85,9 +86,12 @@ const EnvironmentBanner = ({ environment }: EnvironmentBannerProps): React.JSX.E
       <button
         aria-controls={detailsId}
         aria-expanded={expanded}
-        aria-haspopup="true"
         className="environment-bar__toggle"
-        onClick={() => setExpanded((current) => !current)}
+        onClick={(event) => {
+          setPointerEntry(event.detail > 0);
+          setExpanded((current) => !current);
+        }}
+        ref={toggleRef}
         title={expanded ? '收起环境检查详情' : '查看环境检查详情'}
         type="button"
       >
@@ -100,29 +104,26 @@ const EnvironmentBanner = ({ environment }: EnvironmentBannerProps): React.JSX.E
         />
       </button>
 
-      <AnimatePresence initial={false}>
         {expanded ? (
-          <motion.div
-            animate="visible"
+          <div
             aria-labelledby="environment-details-title"
             className="environment-popover liquid-glass-panel"
-            exit="exit"
+            data-motion={pointerEntry ? 'pointer' : 'instant'}
             id={detailsId}
-            initial="hidden"
             role="region"
-            variants={fadeUpVariants}
           >
-            <span aria-hidden="true" className="environment-popover__glow liquid-glass-glow" />
             <header className="environment-popover__header">
               <div>
-                <p className="section-eyebrow">系统诊断</p>
                 <h3 id="environment-details-title">运行环境</h3>
                 <small>检查于 {formatDateTime(environment.checkedAt)}</small>
               </div>
               <button
                 aria-label="关闭环境详情"
                 className="environment-popover__close"
-                onClick={() => setExpanded(false)}
+                onClick={() => {
+                  setExpanded(false);
+                  toggleRef.current?.focus();
+                }}
                 title="关闭环境详情"
                 type="button"
               >
@@ -174,9 +175,8 @@ const EnvironmentBanner = ({ environment }: EnvironmentBannerProps): React.JSX.E
                 })}
               </div>
             )}
-          </motion.div>
+          </div>
         ) : null}
-      </AnimatePresence>
     </section>
   );
 };

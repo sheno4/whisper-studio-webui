@@ -1,0 +1,148 @@
+/* A single material and motion vocabulary for the entire workspace. */
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  font-size: 100%;
+  line-height: 1.5;
+  font-optical-sizing: auto;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+
+  --bg-canvas: #e8edf6;
+  --bg-depth: #e8e9f3;
+  --bg-well: #f2f4f8;
+  --surface-rgb: 255 255 255;
+  --ink-rgb: 30 35 47;
+  --glass-rgb: 255 255 255;
+  --surface-content: rgb(255 255 255 / 0.97);
+  --surface-subtle: #f4f6fa;
+  --surface-selected: #e9f1ff;
+  --glass-chrome: rgb(255 255 255 / 0.62);
+  --glass-panel: var(--surface-content);
+  --glass-raised: #ffffff;
+  --glass-float: rgb(255 255 255 / 0.91);
+  --glass-inner: rgb(32 48 72 / 0.035);
+  --line-soft: rgb(30 45 70 / 0.095);
+  --line-medium: rgb(30 45 70 / 0.16);
+  --line-hot: rgb(30 45 70 / 0.24);
+  --glass-edge: rgb(255 255 255 / 0.84);
+  --text-primary: #1d2431;
+  --text-secondary: #535b6b;
+  --text-tertiary: #626a79;
+  --accent: #0068d9;
+  --accent-blue: #0068d9;
+  --accent-rgb: 0 104 217;
+  --accent-cyan: #147d67;
+  --accent-cyan-rgb: 20 125 103;
+  --accent-soft: rgb(0 104 217 / 0.09);
+  --success: #147d42;
+  --success-rgb: 20 125 66;
+  --warning: #925000;
+  --warning-rgb: 146 80 0;
+  --danger: #c52d37;
+  --danger-rgb: 197 45 55;
+  --scrim: rgb(20 27 44 / 0.28);
+  --shadow-panel: 0 8px 28px rgb(37 52 80 / 0.05);
+  --shadow-chrome: 0 8px 30px rgb(39 58 95 / 0.09), inset 0 1px 0 rgb(255 255 255 / 0.85);
+  --shadow-float: 0 22px 68px rgb(34 46 76 / 0.18), inset 0 1px 0 rgb(255 255 255 / 0.9);
+  --radius-window: 1.75rem;
+  --radius-panel: 1.25rem;
+  --radius-card: 0.875rem;
+  --radius-control: 0.75rem;
+  --radius-pill: 999px;
+  --blur-chrome: 20px;
+  --blur-panel: 0px;
+  --blur-float: 20px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-fluid: var(--ease-out);
+  --duration-fast: 140ms;
+  --duration-ui: 180ms;
+  --duration-modal: 240ms;
+}
+
+/* The media query also prevents a bright first frame before React mounts. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-appearance="light"]) {
+    color-scheme: dark;
+    --bg-canvas: #0f1520;
+    --bg-depth: #1b2335;
+    --bg-well: #141c28;
+    --surface-rgb: 28 35 48;
+    --ink-rgb: 240 244 255;
+    --glass-rgb: 33 42 59;
+    --surface-content: rgb(28 35 48 / 0.97);
+    --surface-subtle: #222c3b;
+    --surface-selected: #203857;
+    --glass-chrome: rgb(33 42 59 / 0.73);
+    --glass-raised: #283244;
+    --glass-float: rgb(32 41 57 / 0.95);
+    --glass-inner: rgb(240 244 255 / 0.045);
+    --line-soft: rgb(233 239 255 / 0.1);
+    --line-medium: rgb(233 239 255 / 0.17);
+    --line-hot: rgb(233 239 255 / 0.26);
+    --glass-edge: rgb(235 244 255 / 0.2);
+    --text-primary: #f4f6fa;
+    --text-secondary: #c2c9d6;
+    --text-tertiary: #a0aabc;
+    --accent: #79b8ff;
+    --accent-blue: #79b8ff;
+    --accent-rgb: 121 184 255;
+    --accent-cyan: #65cfb2;
+    --accent-cyan-rgb: 101 207 178;
+    --accent-soft: rgb(121 184 255 / 0.13);
+    --success: #70d7a2;
+    --success-rgb: 112 215 162;
+    --warning: #efbd78;
+    --warning-rgb: 239 189 120;
+    --danger: #ff929b;
+    --danger-rgb: 255 146 155;
+    --scrim: rgb(2 6 14 / 0.58);
+    --shadow-panel: 0 8px 28px rgb(0 0 0 / 0.14);
+    --shadow-chrome: 0 8px 30px rgb(0 0 0 / 0.24), inset 0 1px 0 rgb(240 244 255 / 0.1);
+    --shadow-float: 0 22px 68px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(240 244 255 / 0.12);
+  }
+}
+
+/* Explicit dark appearance works independently of the system setting. */
+:root[data-appearance="dark"] {
+  color-scheme: dark;
+  --bg-canvas: #0f1520;
+  --bg-depth: #1b2335;
+  --bg-well: #141c28;
+  --surface-rgb: 28 35 48;
+  --ink-rgb: 240 244 255;
+  --glass-rgb: 33 42 59;
+  --surface-content: rgb(28 35 48 / 0.97);
+  --surface-subtle: #222c3b;
+  --surface-selected: #203857;
+  --glass-chrome: rgb(33 42 59 / 0.73);
+  --glass-raised: #283244;
+  --glass-float: rgb(32 41 57 / 0.95);
+  --glass-inner: rgb(240 244 255 / 0.045);
+  --line-soft: rgb(233 239 255 / 0.1);
+  --line-medium: rgb(233 239 255 / 0.17);
+  --line-hot: rgb(233 239 255 / 0.26);
+  --glass-edge: rgb(235 244 255 / 0.2);
+  --text-primary: #f4f6fa;
+  --text-secondary: #c2c9d6;
+  --text-tertiary: #a0aabc;
+  --accent: #79b8ff;
+  --accent-blue: #79b8ff;
+  --accent-rgb: 121 184 255;
+  --accent-cyan: #65cfb2;
+  --accent-cyan-rgb: 101 207 178;
+  --accent-soft: rgb(121 184 255 / 0.13);
+  --success: #70d7a2;
+  --success-rgb: 112 215 162;
+  --warning: #efbd78;
+  --warning-rgb: 239 189 120;
+  --danger: #ff929b;
+  --danger-rgb: 255 146 155;
+  --scrim: rgb(2 6 14 / 0.58);
+  --shadow-panel: 0 8px 28px rgb(0 0 0 / 0.14);
+  --shadow-chrome: 0 8px 30px rgb(0 0 0 / 0.24), inset 0 1px 0 rgb(240 244 255 / 0.1);
+  --shadow-float: 0 22px 68px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(240 244 255 / 0.12);
+}

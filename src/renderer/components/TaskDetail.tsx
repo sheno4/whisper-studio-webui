@@ -1,9 +1,7 @@
-import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 
 import type { ExportFileKind, HistoryRecord, TaskRecord, TranscriptSegment } from '../../shared/types';
-import { fadeUpVariants, paneSwitchVariants, tabIndicatorTransition } from '../motion';
 import {
   describeTaskMode,
   describeTaskLanguage,
@@ -209,30 +207,19 @@ function DetailNotice({ code, message, title, tone }: DetailNoticeProps): React.
 function DetailEmptyState(): React.JSX.Element {
   return (
     <section aria-labelledby="detail-empty-title" className="detail-shell detail-shell-empty">
-      <motion.article
-        animate="visible"
-        className="detail-panel-surface detail-empty-card glass-panel"
-        initial="hidden"
-        variants={fadeUpVariants}
+      <article
+        className="detail-panel-surface detail-empty-card content-panel"
       >
         <div aria-hidden="true" className="detail-empty-visual">
           <span className="detail-empty-orb">
             <Icon name="waveform" size={34} />
           </span>
-          <div className="detail-empty-wave">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
         </div>
         <div className="detail-empty-copy">
-          <p className="section-eyebrow">结果工作区</p>
           <h2 id="detail-empty-title">选择一个任务开始查看</h2>
           <p>从队列或历史记录中选择任务，即可查看转写全文、逐句时间轴、中文译文和处理日志。</p>
         </div>
-      </motion.article>
+      </article>
     </section>
   );
 }
@@ -273,11 +260,8 @@ function HistoryDetail({
 
   return (
     <section aria-labelledby="history-detail-title" className="detail-shell history-detail-shell">
-      <motion.article
-        animate="visible"
-        className="detail-hero history-detail-hero glass-panel"
-        initial="hidden"
-        variants={fadeUpVariants}
+      <article
+        className="detail-hero history-detail-hero content-panel"
       >
         <div className="detail-hero-header">
           <div className="detail-heading">
@@ -285,7 +269,6 @@ function HistoryDetail({
               <Icon name="history" size={22} />
             </span>
             <div className="detail-title-wrap">
-              <p className="section-eyebrow">历史记录</p>
               <h2 id="history-detail-title" title={getReadableName(historyRecord)}>
                 {getReadableName(historyRecord)}
               </h2>
@@ -305,7 +288,7 @@ function HistoryDetail({
           ))}
         </ul>
 
-        <div aria-label="历史任务操作" className="detail-actions detail-action-bar" role="group">
+        <div aria-label="历史任务操作" className="detail-actions detail-action-bar control-rail" role="group">
           <button
             className="ghost-button detail-action-button"
             disabled={!historyRecord.outputDir}
@@ -339,13 +322,10 @@ function HistoryDetail({
             <DetailNotice message={normalizeUiText(historyRecord.error)} title="任务未完整结束" tone="warning" />
           </div>
         ) : null}
-      </motion.article>
+      </article>
 
-      <motion.article
-        animate="visible"
-        className="detail-panel-surface detail-workspace history-summary glass-panel"
-        initial="hidden"
-        variants={fadeUpVariants}
+      <article
+        className="detail-panel-surface detail-workspace history-summary content-panel"
       >
         <div className="panel-toolbar detail-panel-toolbar history-summary-header">
           <div className="detail-panel-heading">
@@ -353,7 +333,6 @@ function HistoryDetail({
               <Icon name="info" size={20} />
             </span>
             <div>
-              <p className="section-eyebrow">任务归档</p>
               <h3>历史摘要</h3>
             </div>
           </div>
@@ -368,7 +347,7 @@ function HistoryDetail({
             </button>
           ) : null}
         </div>
-      </motion.article>
+      </article>
     </section>
   );
 }
@@ -431,17 +410,13 @@ function ResultPanel({
   }
 
   return (
-    <motion.section
-      animate="active"
+    <section
       aria-labelledby={`task-detail-tab-${kind}`}
       className="detail-panel-body detail-panel result-panel"
-      exit="inactive"
       id={`task-detail-panel-${kind}`}
-      initial="inactive"
       key={kind}
       role="tabpanel"
       tabIndex={0}
-      variants={paneSwitchVariants}
     >
       <div className="panel-toolbar detail-panel-toolbar result-panel-toolbar">
         <div className="detail-panel-heading">
@@ -449,12 +424,11 @@ function ResultPanel({
             <Icon name={configuration.icon} size={20} />
           </span>
           <div>
-            <p className="section-eyebrow">{configuration.eyebrow}</p>
             <h3>{configuration.title}</h3>
           </div>
         </div>
 
-        <div className="result-panel-actions">
+        <div className="result-panel-actions control-rail">
           {hasTimeline ? (
             <div aria-label={`${configuration.eyebrow}查看方式`} className="result-view-switch" role="group">
               <button
@@ -511,23 +485,19 @@ function ResultPanel({
       <div aria-live="polite" className={`detail-scroll-view result-content ${showingTimeline ? 'timeline-view' : 'full-view'}`}>
         {resultContent}
       </div>
-    </motion.section>
+    </section>
   );
 }
 
 function LogsPanel({ task }: LogsPanelProps): React.JSX.Element {
   return (
-    <motion.section
-      animate="active"
+    <section
       aria-labelledby="task-detail-tab-logs"
       className="detail-panel-body detail-panel log-panel"
-      exit="inactive"
       id="task-detail-panel-logs"
-      initial="inactive"
       key="logs"
       role="tabpanel"
       tabIndex={0}
-      variants={paneSwitchVariants}
     >
       <div className="panel-toolbar detail-panel-toolbar log-panel-toolbar">
         <div className="detail-panel-heading">
@@ -535,7 +505,6 @@ function LogsPanel({ task }: LogsPanelProps): React.JSX.Element {
             <Icon name="terminal" size={20} />
           </span>
           <div>
-            <p className="section-eyebrow">运行记录</p>
             <h3>处理日志</h3>
           </div>
         </div>
@@ -574,7 +543,7 @@ function LogsPanel({ task }: LogsPanelProps): React.JSX.Element {
           </ol>
         )}
       </div>
-    </motion.section>
+    </section>
   );
 }
 
@@ -616,13 +585,13 @@ const TaskDetail = ({
   const progressBarActive = ['queued', 'downloading', 'preprocessing', 'transcribing', 'translating'].includes(
     currentTask.status
   );
-  let progressValue = currentTask.progressPercent ?? 0;
-  if (currentTask.status === 'completed' && currentTask.progressPercent === undefined) {
-    progressValue = 100;
-  }
-  progressValue = Math.min(100, Math.max(0, progressValue));
+  const hasProgress = typeof currentTask.progressPercent === 'number' && Number.isFinite(currentTask.progressPercent);
+  const progressKnown = hasProgress || currentTask.status === 'completed';
+  const progressValue = hasProgress
+    ? Math.min(100, Math.max(0, currentTask.progressPercent ?? 0))
+    : currentTask.status === 'completed' ? 100 : 0;
 
-  const progressPercent = formatProgressPercent(progressValue) ?? `${Math.round(progressValue)}%`;
+  const progressPercent = formatProgressPercent(progressKnown ? progressValue : undefined);
   const progressMessage = normalizeUiText(currentTask.progressMessage) || '等待任务启动';
   const sourceButtonLabel = getSourceButtonLabel(currentTask);
   const visibleError = currentTask.error ? normalizeUiText(currentTask.error) : undefined;
@@ -709,11 +678,8 @@ const TaskDetail = ({
 
   return (
     <section aria-labelledby="task-detail-title" className="detail-shell task-detail-shell">
-      <motion.article
-        animate="visible"
-        className="detail-hero task-detail-hero glass-panel"
-        initial="hidden"
-        variants={fadeUpVariants}
+      <article
+        className="detail-hero task-detail-hero content-panel"
       >
         <div className="detail-hero-header">
           <div className="detail-heading">
@@ -721,7 +687,6 @@ const TaskDetail = ({
               <Icon name={currentTask.sourceType === 'link' ? 'link' : 'file'} size={22} />
             </span>
             <div className="detail-title-wrap">
-              <p className="section-eyebrow">当前任务</p>
               <h2 id="task-detail-title" title={getReadableName(currentTask)}>
                 {getReadableName(currentTask)}
               </h2>
@@ -739,19 +704,19 @@ const TaskDetail = ({
           aria-label="任务处理进度"
           aria-valuemax={100}
           aria-valuemin={0}
-          aria-valuenow={progressValue}
-          aria-valuetext={`${progressPercent}，${progressMessage}`}
+          aria-valuenow={progressKnown ? progressValue : undefined}
+          aria-valuetext={progressPercent ? `${progressPercent}，${progressMessage}` : progressMessage}
           className="detail-progress detail-progress-card"
           role="progressbar"
         >
           <div className="detail-progress-copy">
             <p>{progressMessage}</p>
-            <span className="progress-percent">{progressPercent}</span>
+            <span className="progress-percent">{progressPercent ?? (progressBarActive ? '处理中' : statusLabels[currentTask.status])}</span>
           </div>
-          <div aria-hidden="true" className="detail-progress-bar detail-progress-track">
+          <div aria-hidden="true" className={`detail-progress-bar detail-progress-track${progressBarActive && !progressKnown ? ' is-indeterminate' : ''}`}>
             <span
-              className={`detail-progress-fill ${progressBarActive ? 'active' : ''}`}
-              style={{ width: `${progressValue}%` }}
+              className={`detail-progress-fill progress-fill ${progressBarActive ? 'active' : ''}`}
+              style={{ transform: `scaleX(${progressValue / 100})` }}
             />
           </div>
         </div>
@@ -764,7 +729,7 @@ const TaskDetail = ({
           ))}
         </ul>
 
-        <div aria-label="任务文件操作" className="detail-actions detail-action-bar" role="group">
+        <div aria-label="任务文件操作" className="detail-actions detail-action-bar control-rail" role="group">
           <button
             className="ghost-button detail-action-button"
             disabled={!currentTask.outputDir}
@@ -802,16 +767,12 @@ const TaskDetail = ({
             {visibleFallback ? <DetailNotice message={visibleFallback} title="媒体规格已调整" tone="warning" /> : null}
           </div>
         ) : null}
-      </motion.article>
+      </article>
 
-      <motion.article
-        animate="visible"
-        className="detail-panel-surface detail-workspace glass-panel"
-        initial="hidden"
-        variants={fadeUpVariants}
+      <article
+        className="detail-panel-surface detail-workspace content-panel"
       >
-        <LayoutGroup id="task-detail-tabs">
-          <div aria-label="任务结果" className="detail-panel-tabs detail-tabs" role="tablist">
+          <div aria-label="任务结果" className="detail-panel-tabs detail-tabs control-rail" role="tablist">
             {detailTabs.map((tab) => {
               const selected = activePanel === tab.id;
               const badge = tab.id === 'logs' && currentTask.logs.length > 0 ? currentTask.logs.length : undefined;
@@ -830,11 +791,9 @@ const TaskDetail = ({
                   type="button"
                 >
                   {selected ? (
-                    <motion.span
+                    <span
                       aria-hidden="true"
                       className="detail-tab-indicator"
-                      layoutId="task-detail-tab-indicator"
-                      transition={tabIndicatorTransition}
                     />
                   ) : null}
                   <Icon name={tab.icon} size={16} />
@@ -844,12 +803,8 @@ const TaskDetail = ({
               );
             })}
           </div>
-        </LayoutGroup>
-
-        <AnimatePresence initial={false} mode="wait">
-          {activePanelContent}
-        </AnimatePresence>
-      </motion.article>
+        {activePanelContent}
+      </article>
     </section>
   );
 };

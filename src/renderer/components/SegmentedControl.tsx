@@ -1,7 +1,4 @@
-import { LayoutGroup, motion } from 'framer-motion';
-import type { ReactNode } from 'react';
-
-import { tabIndicatorTransition } from '../motion';
+import { useRef, type KeyboardEvent, type ReactNode } from 'react';
 
 export interface SegmentedOption<T extends string> {
   value: T;
@@ -39,8 +36,26 @@ function SegmentedControl<T extends string>({
   allowWrap = false,
   stretch = false
 }: SegmentedControlProps<T>): React.JSX.Element {
+  const groupRef = useRef<HTMLDivElement | null>(null);
+  const selectedIndex = items.findIndex((item) => item.value === value && !item.disabled);
+  const tabbableIndex = selectedIndex >= 0 ? selectedIndex : items.findIndex((item) => !item.disabled);
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
+    const available = items.map((item, itemIndex) => !item.disabled ? itemIndex : -1).filter((itemIndex) => itemIndex >= 0);
+    if (!available.length) return;
+    let next: number;
+    if (event.key === 'Home') next = available[0];
+    else if (event.key === 'End') next = available[available.length - 1];
+    else if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
+      const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+      next = available[(available.indexOf(index) + direction + available.length) % available.length];
+    } else return;
+    event.preventDefault();
+    onChange(items[next].value);
+    groupRef.current?.querySelectorAll<HTMLButtonElement>('button')[next]?.focus({ preventScroll: true });
+  };
+
   return (
-    <LayoutGroup id={id}>
       <div
         aria-label={ariaLabel}
         className={joinClassNames(
@@ -49,9 +64,11 @@ function SegmentedControl<T extends string>({
           stretch && 'stretch',
           className
         )}
+        id={id}
+        ref={groupRef}
         role="group"
       >
-        {items.map((item) => {
+        {items.map((item, index) => {
           const active = value === item.value;
 
           return (
@@ -67,14 +84,15 @@ function SegmentedControl<T extends string>({
               disabled={item.disabled}
               key={item.value}
               onClick={() => onChange(item.value)}
+              onKeyDown={(event) => handleKeyDown(event, index)}
+              tabIndex={index === tabbableIndex ? 0 : -1}
               title={item.title}
               type="button"
             >
               {active ? (
-                <motion.span
+                <span
+                  aria-hidden="true"
                   className="segment-active-indicator"
-                  layoutId={`${id}-indicator`}
-                  transition={tabIndicatorTransition}
                 />
               ) : null}
               <span className="segment-label">{item.label}</span>
@@ -83,7 +101,6 @@ function SegmentedControl<T extends string>({
           );
         })}
       </div>
-    </LayoutGroup>
   );
 }
 

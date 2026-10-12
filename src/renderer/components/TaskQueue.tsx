@@ -1,7 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
-
 import type { TaskRecord } from '../../shared/types';
-import { fadeUpVariants, staggerContainerVariants } from '../motion';
 import {
   describeTaskMode,
   describeTaskLanguage,
@@ -11,8 +8,7 @@ import {
   getReadableName,
   normalizeUiText,
   statusLabels,
-  statusTones,
-  truncate
+  statusTones
 } from '../utils';
 import Icon from './Icon';
 
@@ -58,15 +54,11 @@ const TaskQueue = ({
 
   return (
     <section aria-label={`任务队列，共 ${tasks.length} 项`} className="task-queue">
-      <motion.div
-        animate="visible"
+      <div
         aria-label="任务列表"
         className="task-queue__list"
-        initial="hidden"
         role="list"
-        variants={staggerContainerVariants}
       >
-        <AnimatePresence initial={false}>
           {tasks.map((task) => {
             const selected = selectedTaskId === task.id;
             const active = activeStatuses.has(task.status);
@@ -93,15 +85,12 @@ const TaskQueue = ({
             ].filter((value): value is string => Boolean(value));
 
             return (
-              <motion.article
+              <article
                 aria-label={`${readableName}，${statusLabel}`}
                 className={`task-card${selected ? ' is-selected' : ''}`}
-                exit="exit"
                 key={task.id}
-                layout
                 onClick={() => onSelect(task.id)}
                 role="listitem"
-                variants={fadeUpVariants}
               >
                 <button
                   aria-label={`查看任务“${readableName}”，当前状态：${statusLabel}`}
@@ -119,7 +108,7 @@ const TaskQueue = ({
                   </span>
                   <span className="task-card__content">
                     <span className="task-card__title-row">
-                      <strong title={readableName}>{truncate(readableName, 46)}</strong>
+                      <strong title={readableName}>{readableName}</strong>
                       <span
                         aria-label={`状态：${statusLabel}`}
                         className={`status-badge ${statusTones[task.status]}`}
@@ -130,7 +119,7 @@ const TaskQueue = ({
                       </span>
                     </span>
                     <span className="task-card__input" title={task.input}>
-                      {truncate(task.input, 82)}
+                      {task.input}
                     </span>
                     <span aria-label="任务信息" className="task-card__metadata" role="list">
                       {metaTags.map((value, index) => (
@@ -153,15 +142,14 @@ const TaskQueue = ({
                     aria-valuemin={0}
                     aria-valuenow={hasProgress ? progressValue : undefined}
                     aria-valuetext={progressPercent ?? progressMessage}
-                    className={`task-card__progress-track${active ? ' is-active' : ''}`}
+                    className={`task-card__progress-track${active ? ' is-active' : ''}${active && !hasProgress ? ' is-indeterminate' : ''}`}
                     role="progressbar"
                     title={progressPercent ? `处理进度 ${progressPercent}` : progressMessage}
                   >
-                    <motion.span
-                      animate={{ width: `${progressValue}%` }}
-                      className="task-card__progress-value"
-                      initial={false}
-                      transition={{ duration: 0.12, ease: 'linear' }}
+                    <span
+                      aria-hidden="true"
+                      className="task-card__progress-value progress-fill"
+                      style={{ transform: `scaleX(${progressValue / 100})` }}
                     />
                   </div>
                 </div>
@@ -215,11 +203,10 @@ const TaskQueue = ({
                     </button>
                   ) : null}
                 </div>
-              </motion.article>
+              </article>
             );
           })}
-        </AnimatePresence>
-      </motion.div>
+      </div>
     </section>
   );
 };

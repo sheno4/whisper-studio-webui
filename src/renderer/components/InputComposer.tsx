@@ -1,9 +1,7 @@
-import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { TRANSCRIPTION_LANGUAGE_OPTIONS } from '../../shared/constants';
 import type { DownloadBehavior, TranscriptionLanguage, VideoQualityOption } from '../../shared/types';
-import { fadeUpVariants, panelResizeTransition } from '../motion';
 import { videoQualityLabels } from '../utils';
 import Icon, { type IconName } from './Icon';
 import AnimatedSelect from './AnimatedSelect';
@@ -139,25 +137,19 @@ const InputComposer = ({
         : `直接转写${translateNext ? '并翻译成中文' : ''} · ${languageLabel}`;
 
   return (
-    <motion.section
-      animate="visible"
+    <section
       aria-busy={submissionPending}
       aria-labelledby="input-composer-title"
-      className="input-composer liquid-glass-panel"
-      initial="hidden"
-      variants={fadeUpVariants}
+      className="input-composer content-panel"
     >
-      <span aria-hidden="true" className="input-composer__glow liquid-glass-glow" />
-
       <header className="input-composer__header">
         <div className="input-composer__heading">
           <span aria-hidden="true" className="input-composer__heading-icon">
             <Icon name="upload" size={20} />
           </span>
           <div>
-            <p className="section-eyebrow">新建任务</p>
-            <h2 id="input-composer-title">导入链接或文件</h2>
-            <p>粘贴分享内容，或从电脑选择媒体文件。</p>
+            <h2 id="input-composer-title">新建任务</h2>
+            <p>添加媒体链接或本地文件</p>
           </div>
         </div>
         <kbd className="input-composer__shortcut">Enter</kbd>
@@ -179,7 +171,7 @@ const InputComposer = ({
             className="input-composer__textarea"
             id="media-link-input"
             placeholder="粘贴抖音、YouTube、B 站等媒体链接…"
-            rows={4}
+            rows={3}
             spellCheck={false}
             value={linkInput}
             onChange={(event) => onLinkInputChange(event.target.value)}
@@ -210,7 +202,7 @@ const InputComposer = ({
         </div>
       </div>
 
-      <motion.div className="input-composer__workflow" layout transition={panelResizeTransition}>
+      <div className="input-composer__workflow">
         <fieldset
           aria-describedby="processing-capabilities-help"
           className="input-composer__capability-fieldset"
@@ -258,16 +250,9 @@ const InputComposer = ({
           </div>
         </fieldset>
 
-        <AnimatePresence initial={false} mode="popLayout">
           {transcriptionEnabled ? (
-            <motion.fieldset
-              animate="visible"
+            <fieldset
               className="input-composer__conditional-option input-composer__language-option"
-              exit="exit"
-              initial="hidden"
-              key="transcription-language"
-              layout
-              variants={fadeUpVariants}
             >
               <legend>
                 <Icon aria-hidden="true" name="waveform" size={17} />
@@ -285,18 +270,12 @@ const InputComposer = ({
               <p className="input-composer__language-help">
                 已知语言时直接指定可跳过自动检测；混合语言建议保持自动。
               </p>
-            </motion.fieldset>
+            </fieldset>
           ) : null}
 
           {downloadEnabled ? (
-            <motion.fieldset
-              animate="visible"
+            <fieldset
               className="input-composer__conditional-option"
-              exit="exit"
-              initial="hidden"
-              key="download-quality"
-              layout
-              variants={fadeUpVariants}
             >
               <legend>
                 <Icon aria-hidden="true" name="download" size={17} />
@@ -316,15 +295,12 @@ const InputComposer = ({
                 stretch
                 value={videoQuality}
               />
-            </motion.fieldset>
+            </fieldset>
           ) : null}
-        </AnimatePresence>
 
-        <motion.div
+        <div
           aria-live="polite"
           className="input-composer__summary"
-          layout
-          transition={panelResizeTransition}
         >
           <span aria-hidden="true" className="input-composer__summary-icon">
             <Icon name="sparkles" size={18} />
@@ -333,9 +309,9 @@ const InputComposer = ({
             <small>本次将执行</small>
             <strong>{summaryText}</strong>
           </span>
-        </motion.div>
+        </div>
 
-        <motion.div className="input-composer__actions" layout transition={panelResizeTransition}>
+        <div className="input-composer__actions control-rail">
           <button
             aria-disabled={!canSubmitLinks}
             className="primary-button input-composer__submit"
@@ -358,14 +334,14 @@ const InputComposer = ({
             <Icon aria-hidden="true" name="folder" size={18} />
             选择本地文件
           </button>
-        </motion.div>
+        </div>
 
         <p className="input-composer__footnote">
           <Icon aria-hidden="true" name="info" size={15} />
           保存媒体与下载规格仅对链接生效；本地文件需要启用生成转写。
         </p>
-      </motion.div>
-    </motion.section>
+      </div>
+    </section>
   );
 };
 

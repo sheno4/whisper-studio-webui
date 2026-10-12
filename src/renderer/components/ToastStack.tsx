@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
 
 import type { ToastEvent } from '../../shared/types';
-import { toastVariants } from '../motion';
+import { isKeyboardInteraction } from '../hooks/useInteractionModality';
+import { useReducedMotionPreference } from '../hooks/useReducedMotionPreference';
+import { getToastVariants } from '../motion';
 import { normalizeUiText } from '../utils';
 import Icon, { type IconName } from './Icon';
 
@@ -22,6 +24,7 @@ function getToastIcon(tone: ToastEvent['tone']): IconName {
 }
 
 function ToastStack({ toasts }: ToastStackProps): React.JSX.Element {
+  const reducedMotion = useReducedMotionPreference();
   return (
     <div aria-atomic="false" aria-live="polite" className="toast-viewport">
       <AnimatePresence initial={false}>
@@ -33,7 +36,7 @@ function ToastStack({ toasts }: ToastStackProps): React.JSX.Element {
             initial="hidden"
             key={toast.id}
             role={toast.tone === 'error' ? 'alert' : 'status'}
-            variants={toastVariants}
+            variants={getToastVariants(reducedMotion, isKeyboardInteraction())}
           >
             <span className="toast-icon" aria-hidden="true">
               <Icon name={getToastIcon(toast.tone)} size={17} />

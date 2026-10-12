@@ -121,12 +121,12 @@ test('model panel preserves other downloads, matches the Python environment, and
   const nodes = elements(hook.current);
   const rows = nodes.filter((node) => node.type === 'article');
   assert.equal(rows.length, 2);
-  assert.equal(nodes.find((node) => node.type === 'progress').props.value, 25);
+  assert.equal(nodes.find((node) => node.props.role === 'progressbar').props['aria-valuenow'], 25);
   assert.ok(nodes.some((node) => node.type === 'small' && node.props.children === '25% · 50.0 MB / 200.0 MB'));
   assert.ok(nodes.some((node) => node.props.className?.includes('row--ready')));
   assert.ok(!JSON.stringify(hook.current).includes('wrong environment'));
   hook.update({ settings: selectedModelSettings, preparations: [{ ...states[0], percent: undefined, downloadedBytes: undefined, totalBytes: undefined }, states[1]] });
-  assert.equal(elements(hook.current).find((node) => node.type === 'progress').props.value, undefined);
+  assert.equal(elements(hook.current).find((node) => node.props.role === 'progressbar').props['aria-valuenow'], undefined);
   hook.dispose();
 });
 
@@ -145,10 +145,10 @@ test('model panel retry failures stay visible and a late request response cannot
   hook.update({ settings: selectedModelSettings, preparations: [preparing] });
   pending.resolve({ ...preparing, status: 'queued', percent: undefined });
   await hook.settle();
-  assert.equal(elements(hook.current).find((node) => node.type === 'progress').props.value, 72);
+  assert.equal(elements(hook.current).find((node) => node.props.role === 'progressbar').props['aria-valuenow'], 72);
   hook.update({ settings: selectedModelSettings, preparations: [{ ...failed, id: 'retry-elsewhere' }] });
   assert.equal(elements(hook.current).filter((node) => node.type === 'article').length, 1);
-  assert.ok(!elements(hook.current).some((node) => node.type === 'progress'));
+  assert.ok(!elements(hook.current).some((node) => node.props.role === 'progressbar'));
   hook.dispose();
 });
 
@@ -163,7 +163,7 @@ test('model panel cancellation reports errors instead of claiming a completed ca
   await hook.settle();
   assert.equal(cancelledId, 'active-model');
   assert.match(elements(hook.current).find((node) => node.props.role === 'alert').props.children, /状态已更新/);
-  assert.ok(elements(hook.current).some((node) => node.type === 'progress'));
+  assert.ok(elements(hook.current).some((node) => node.props.role === 'progressbar'));
   hook.dispose();
 });
 
