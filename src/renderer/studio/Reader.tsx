@@ -5,13 +5,14 @@ import Icon from '../components/Icon';
 import { GlassButton, GlassSurface } from '../glass';
 import type { WhisperWorkspaceController } from '../hooks/useWhisperWorkspace';
 import { describeTaskLanguage, describeTaskMode, formatDuration, formatLongDateTime, getReadableName, isTaskActive, normalizeUiText, statusLabels, statusTones } from '../utils';
-import { TaskProgress } from './Library';
+import { TaskProgress } from './ActivityRail';
 import { formatTimestamp, literalMatches, mergeTranscript, pairSegments } from './content/transcript';
 import ActionMenu from './content/ActionMenu';
 
 export interface ReaderProps {
   workspace: WhisperWorkspaceController;
-  onBack: () => void;
+  onBack?: () => void;
+  embedded?: boolean;
 }
 
 type ReadingMode = 'original' | 'translation' | 'bilingual' | 'logs';
@@ -43,7 +44,7 @@ function safeSourceUrl(task: TaskRecord): string | undefined {
   try { const url = new URL(input); return ['https:', 'http:'].includes(url.protocol) ? url.href : undefined; } catch { return undefined; }
 }
 
-export default function Reader({ workspace, onBack }: ReaderProps): React.JSX.Element {
+export default function Reader({ workspace, onBack, embedded = false }: ReaderProps): React.JSX.Element {
   const task = workspace.activity.activeTask;
   const history = workspace.activity.activeHistoryRecord;
   const record = task ?? history;
@@ -65,7 +66,7 @@ export default function Reader({ workspace, onBack }: ReaderProps): React.JSX.El
   const hitCount = displayStrings.reduce((count, text) => count + literalMatches(text, query).length, 0);
 
   useEffect(() => { readingRef.current?.querySelectorAll('[data-reader-hit]').forEach((hit) => hit.removeAttribute('data-current')); setCurrentHit(-1); }, [query, mode, segmented, record?.id, mode === 'logs' ? logText : original, mode === 'logs' ? '' : translation]);
-  useEffect(() => { if (removalRequested.current && !record) onBack(); }, [record, onBack]);
+  useEffect(() => { if (removalRequested.current && !record && !embedded) onBack?.(); }, [record, onBack, embedded]);
   const removeRecord = async (): Promise<void> => {
     if (!record || removing) return;
     removalRequested.current = true;
@@ -82,15 +83,15 @@ export default function Reader({ workspace, onBack }: ReaderProps): React.JSX.El
     setCurrentHit(next);
   };
 
-  if (!record) return <section className="studio-reader-empty"><h1>这项记录已不在资料库中</h1><GlassButton onClick={onBack}>返回资料库</GlassButton></section>;
+  if (!record) return embedded ? <section className="studio-reader-empty is-embedded"><Icon name="waveform" size={34} /><h2>文字与文件在这里</h2><p>添加媒体后即可查看处理进度；选择左侧任务，阅读、翻译、导出都在同一工作台完成。</p></section> : <section className="studio-reader-empty"><h1>这项记录已不在资料库中</h1><GlassButton onClick={onBack}>返回资料库</GlassButton></section>;
   const sourceUrl = task ? safeSourceUrl(task) : undefined;
   const hasText = Boolean(mode === 'translation' ? translation : mode === 'bilingual' ? original || translation : original);
   const outputs = task ? Object.entries(task.outputFiles).filter((entry): entry is [keyof TaskOutputFiles, string] => Boolean(entry[1])) : [];
   const meta = [record.sourceType === 'link' ? '在线媒体' : '本地文件', task ? describeTaskMode(task) : undefined, describeTaskLanguage(record), formatDuration(task?.mediaInfo?.durationSeconds ?? history?.durationSeconds), `创建于 ${formatLongDateTime(record.createdAt)}`].filter((value): value is string => Boolean(value && value !== '--'));
   return (
-    <section className="studio-reader" aria-labelledby="studio-reader-title">
-      <div className="studio-reader-path"><GlassButton onClick={onBack}><span aria-hidden="true">←</span>资料库</GlassButton><span className={`studio-status is-${statusTones[record.status]}`}><span aria-hidden="true" />{statusLabels[record.status]}</span></div>
-      <header className="studio-reader-heading"><p className="studio-eyebrow">{history ? '历史记录' : task?.downloadBehavior === 'downloadOnly' ? '媒体文件' : '阅读与导出'}</p><h1 id="studio-reader-title">{getReadableName(record)}</h1>{task ? <p className="studio-reader-source">{task.input}</p> : null}</header>
+    <section className={`studio-reader${embedded ? ' is-embedded' : ''}`} aria-labelledby="studio-reader-title">
+      {!embedded ? <div className="studio-reader-path"><GlassButton onClick={onBack}><span aria-hidden="true">←</span>资料库</GlassButton><span className={`studio-status is-${statusTones[record.status]}`}><span aria-hidden="true" />{statusLabels[record.status]}</span></div> : null}
+      <header className="studio-reader-heading"><div><p className="studio-eyebrow">{history ? '历史记录' : task?.downloadBehavior === 'downloadOnly' ? '媒体文件' : '文字与导出'}</p><h1 id="studio-reader-title">{getReadableName(record)}</h1>{task && !embedded ? <p className="studio-reader-source">{task.input}</p> : null}</div>{embedded ? <span className={`studio-status is-${statusTones[record.status]}`}><span aria-hidden="true" />{statusLabels[record.status]}</span> : null}</header>
       {task && active ? <div className="studio-reader-live"><TaskProgress task={task} /></div> : null}
       {record.error ? <div className="studio-notice is-danger" role="alert"><Icon name="warning" /><div><strong>处理未完成{task?.errorCode ? ` · ${task.errorCode}` : ''}</strong><p>{normalizeUiText(record.error)}</p></div></div> : null}
       {task?.warning || task?.mediaInfo?.qualityFallbackMessage ? <div className="studio-notice"><Icon name="info" /><p>{normalizeUiText(task.warning || task.mediaInfo?.qualityFallbackMessage)}</p></div> : null}
@@ -106,7 +107,7 @@ export default function Reader({ workspace, onBack }: ReaderProps): React.JSX.El
           {mode !== 'logs' && rows.length ? <div className="studio-reading-format"><label><input type="checkbox" checked={segmented} onChange={(event) => setSegmented(event.target.checked)} />分段阅读</label>{segmented ? <label><input type="checkbox" checked={timestamps} onChange={(event) => setTimestamps(event.target.checked)} />时间戳</label> : null}</div> : null}
         </div>
         <div className={`studio-reading-page${mode === 'bilingual' ? ' is-bilingual' : ''}`} ref={readingRef} aria-label={readingModes.find((option) => option.value === mode)?.label}>
-          {mode === 'logs' ? task.logs.length ? <ol className="studio-log-stream">{task.logs.map((entry, index) => <li key={`${entry.timestamp}-${index}`} className={`is-${entry.level}`}><header><time dateTime={entry.timestamp}>{formatLongDateTime(entry.timestamp)}</time><span>{entry.level}</span></header><p><Highlight text={normalizeUiText(entry.message)} query={query} /></p>{entry.context ? <pre><Highlight text={entry.context} query={query} /></pre> : null}</li>)}</ol> : <div className="studio-reading-empty"><Icon name="terminal" size={30} /><h2>处理开始后会生成日志</h2><p>下载、转写和翻译的进度会记录在这里。</p></div> : !hasText ? <div className="studio-reading-empty"><Icon name={mode === 'translation' ? 'translate' : 'waveform'} size={32} /><h2>{task.downloadBehavior === 'downloadOnly' ? '媒体已单独保存' : mode === 'translation' ? '还没有中文译文' : '文字正在路上'}</h2><p>{task.downloadBehavior === 'downloadOnly' ? '此任务只下载媒体。可以在下方打开文件或输出目录。' : mode === 'translation' ? task.translateToChinese ? '转写完成后将继续翻译，请稍候。' : '此任务没有启用中文翻译。' : active ? '你可以返回资料库添加其他任务，处理会继续进行。' : '该任务没有生成转写内容，请查看日志了解详情。'}</p></div> : segmented && rows.length ? <ol className="studio-reading-segments">{rows.filter((row) => mode === 'original' ? Boolean(row.original) : mode === 'translation' ? Boolean(row.translation) : true).map((row) => <li key={row.key}>{timestamps ? <time className="studio-segment-time">{formatTimestamp(row.start)} <span aria-hidden="true">—</span> {formatTimestamp(row.end)}</time> : null}<div className="studio-segment-copy">{mode !== 'translation' && row.original ? <p lang={task.language}><Highlight text={row.original} query={query} /></p> : null}{mode !== 'original' && row.translation ? <p lang="zh-CN" className={mode === 'bilingual' ? 'studio-translated-copy' : undefined}><Highlight text={row.translation} query={query} /></p> : null}</div></li>)}</ol> : <div className="studio-reading-prose">{mode === 'bilingual' ? <><section aria-label="转写原文"><h2>原文</h2><p lang={task.language}><Highlight text={original} query={query} /></p></section><section aria-label="中文译文"><h2>中文译文</h2><p lang="zh-CN"><Highlight text={translation || '此任务还没有中文译文。'} query={translation ? query : ''} /></p></section></> : <p lang={mode === 'translation' ? 'zh-CN' : task.language}><Highlight text={mode === 'translation' ? translation : original} query={query} /></p>}</div>}
+          {mode === 'logs' ? task.logs.length ? <ol className="studio-log-stream">{task.logs.map((entry, index) => <li key={`${entry.timestamp}-${index}`} className={`is-${entry.level}`}><header><time dateTime={entry.timestamp}>{formatLongDateTime(entry.timestamp)}</time><span>{entry.level}</span></header><p><Highlight text={normalizeUiText(entry.message)} query={query} /></p>{entry.context ? <pre><Highlight text={entry.context} query={query} /></pre> : null}</li>)}</ol> : <div className="studio-reading-empty"><Icon name="terminal" size={30} /><h2>处理开始后会生成日志</h2><p>下载、转写和翻译的进度会记录在这里。</p></div> : !hasText ? <div className="studio-reading-empty"><Icon name={mode === 'translation' ? 'translate' : 'waveform'} size={32} /><h2>{task.downloadBehavior === 'downloadOnly' ? '媒体已单独保存' : mode === 'translation' ? '还没有中文译文' : '文字正在路上'}</h2><p>{task.downloadBehavior === 'downloadOnly' ? '此任务只下载媒体。可以在下方打开文件或输出目录。' : mode === 'translation' ? task.translateToChinese ? '转写完成后将继续翻译，请稍候。' : '此任务没有启用中文翻译。' : active ? '继续添加媒体或选择其他任务，处理会在后台进行。' : '该任务没有生成转写内容，请查看日志了解详情。'}</p></div> : segmented && rows.length ? <ol className="studio-reading-segments">{rows.filter((row) => mode === 'original' ? Boolean(row.original) : mode === 'translation' ? Boolean(row.translation) : true).map((row) => <li key={row.key}>{timestamps ? <time className="studio-segment-time">{formatTimestamp(row.start)} <span aria-hidden="true">—</span> {formatTimestamp(row.end)}</time> : null}<div className="studio-segment-copy">{mode !== 'translation' && row.original ? <p lang={task.language}><Highlight text={row.original} query={query} /></p> : null}{mode !== 'original' && row.translation ? <p lang="zh-CN" className={mode === 'bilingual' ? 'studio-translated-copy' : undefined}><Highlight text={row.translation} query={query} /></p> : null}</div></li>)}</ol> : <div className="studio-reading-prose">{mode === 'bilingual' ? <><section aria-label="转写原文"><h2>原文</h2><p lang={task.language}><Highlight text={original} query={query} /></p></section><section aria-label="中文译文"><h2>中文译文</h2><p lang="zh-CN"><Highlight text={translation || '此任务还没有中文译文。'} query={translation ? query : ''} /></p></section></> : <p lang={mode === 'translation' ? 'zh-CN' : task.language}><Highlight text={mode === 'translation' ? translation : original} query={query} /></p>}</div>}
         </div>
       </> : <article className="studio-history-summary"><Icon name="history" size={30} /><h2>这项任务已归档</h2><p>历史记录保留了任务摘要。完整文本、字幕和日志可在输出目录中查看。</p>{history?.outputDir ? <button className="studio-path-button" onClick={() => void workspace.revealPath(history.outputDir!)} type="button"><Icon name="folder" />{history.outputDir}</button> : <p>这条记录没有可用的输出目录。</p>}</article>}
 

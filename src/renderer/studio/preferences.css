@@ -31,7 +31,7 @@
   border-radius: 27px 27px 0 0;
   border-width: 0 0 1px;
   padding: 24px 30px;
-  --glass-tint: color-mix(in srgb, var(--surface) 72%, transparent);
+  --glass-tint: color-mix(in srgb, var(--surface) 28%, transparent);
   --glass-shadow: none;
 }
 .prefs-header small { color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .12em; }
@@ -145,7 +145,7 @@
 .prefs-advanced > summary::-webkit-details-marker { display: none; }
 .prefs-advanced[open] > summary svg { transform: rotate(180deg); }
 .prefs-advanced-content { display: grid; gap: 20px; padding: 4px 22px 22px; }
-.prefs-footer { grid-area: footer; display: flex; align-items: center; gap: 12px; padding: 18px 24px; border-radius: 0 0 27px 27px; border-width: 1px 0 0; --glass-tint: color-mix(in srgb, var(--surface) 80%, transparent); --glass-shadow: none; }
+.prefs-footer { grid-area: footer; display: flex; align-items: center; gap: 12px; padding: 18px 24px; border-radius: 0 0 27px 27px; border-width: 1px 0 0; --glass-tint: color-mix(in srgb, var(--surface) 34%, transparent); --glass-shadow: none; }
 .prefs-save-status { flex: 1; min-width: 0; display: grid; gap: 5px; font-size: 12px; }
 .prefs-save-status small { font-size: 10px; color: var(--muted); }
 .prefs-footer button { flex-shrink: 0; }

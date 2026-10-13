@@ -1,4 +1,4 @@
-/* The library, reading desk and import sheet share a new interaction model. */
+/* Shared reading controls and media inputs, including the inline workbench. */
 .studio-visually-hidden {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
@@ -250,6 +250,66 @@ mark[data-current] { outline: 2px solid var(--accent); outline-offset: 2px; back
 .studio-file-drop strong { font-size: 16px; font-weight: 600; }
 .studio-file-drop p { color: var(--muted); font-size: 12px; }
 .studio-file-drop .glass-button { margin-top: 3px; }
+.studio-import-inline .studio-import-sheet { width: 100%; max-height: none; background: transparent; border: 0; border-radius: 0; box-shadow: none; overflow: visible; transition: none; }
+.studio-import-inline .studio-import-header { padding: 0 0 16px; border: 0; align-items: baseline; gap: 12px; }
+.studio-import-inline .studio-import-header h2 { font-size: 17px; letter-spacing: -.025em; }
+.studio-import-inline .studio-import-header > span { color: var(--muted); font-size: 10px; }
+.studio-import-inline .studio-import-form { padding: 0; overflow: visible; }
+.studio-import-inline .studio-import-controls { gap: 16px; }
+.studio-import-inline .studio-import-source { padding: 0; gap: 5px; background: transparent; }
+.studio-import-inline .studio-import-source button { border-radius: 12px; font-size: 13px; }
+.studio-import-inline .studio-import-source button.is-selected { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: none; }
+.studio-import-inline .studio-import-link-field > label { margin-bottom: 8px; font-size: 12px; }
+.studio-import-inline .studio-import-link-field textarea { min-height: 114px; font-size: 14px; padding: 12px 13px; background: color-mix(in srgb, var(--surface-raised) 40%, transparent); }
+.studio-import-inline .studio-field { gap: 7px; }
+.studio-import-inline .studio-field select { background: color-mix(in srgb, var(--surface-raised) 38%, transparent); font-size: 13px; }
+.studio-import-inline .studio-import-options { gap: 12px; }
+.studio-import-inline .studio-import-options .studio-field:only-child { grid-column: 1 / -1; }
+.studio-import-inline .studio-import-translation { padding-top: 14px; gap: 12px; }
+.studio-import-inline .studio-import-service { margin: 0; padding: 0; border-radius: 0; background: transparent; flex-wrap: wrap; gap: 8px; }
+.studio-import-inline .studio-import-service > .studio-field { flex-basis: 100%; }
+.studio-import-inline .studio-import-service > .studio-text-button { padding: 7px 0; min-height: 38px; }
+.studio-import-inline .studio-import-footer { margin-top: 18px; padding-top: 16px; gap: 12px; flex-direction: row; align-items: center; }
+.studio-import-inline .studio-import-footer p { font-size: 10px; }
+.studio-import-inline .studio-import-footer p br { display: none; }
+.studio-import-inline .studio-file-drop { min-height: 180px; padding: 22px 14px; gap: 11px; background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.studio-reader.is-embedded { min-width: 0; }
+.studio-reader.is-embedded .studio-reader-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 22px; max-width: none; }
+.studio-reader.is-embedded .studio-reader-heading > div { min-width: 0; }
+.studio-reader.is-embedded .studio-reader-heading .studio-eyebrow { letter-spacing: 0; margin-bottom: 7px; font-weight: 500; }
+.studio-reader.is-embedded .studio-reader-heading h1 { font-size: clamp(20px, 1.8vw, 27px); line-height: 1.35; letter-spacing: -.025em; text-wrap: initial; }
+.studio-reader.is-embedded .studio-reader-heading > .studio-status { flex-shrink: 0; margin-top: 3px; }
+.studio-reader.is-embedded .studio-reader-live { padding: 13px 15px; background: color-mix(in srgb, var(--surface-raised) 26%, transparent); border-radius: 14px; }
+.studio-reader.is-embedded .studio-reading-tools { position: relative; top: auto; z-index: 2; margin-bottom: 14px; padding: 6px 8px; }
+.studio-reader.is-embedded .studio-reading-modes button { padding: 9px 10px; font-size: 12px; }
+.studio-reader.is-embedded .studio-reading-actions .studio-menu-trigger, .studio-reader.is-embedded .studio-reading-actions .studio-tool-button { padding: 9px; font-size: 12px; }
+.studio-reader.is-embedded .studio-reading-page { padding: 30px; min-height: 380px; background: color-mix(in srgb, var(--surface-raised) 76%, transparent); border-radius: 19px; }
+.studio-reader.is-embedded .studio-reading-prose p, .studio-reader.is-embedded .studio-segment-copy p { font-size: 15px; line-height: 1.9; }
+.studio-reader.is-embedded .studio-reading-preferences { gap: 10px; margin-bottom: 14px; }
+.studio-reader.is-embedded .studio-reader-search { min-width: 160px; }
+.studio-reader.is-embedded .studio-reader-search input { background: color-mix(in srgb, var(--surface-raised) 40%, transparent); }
+.studio-reader.is-embedded .studio-reading-format { font-size: 11px; gap: 11px; }
+.studio-reader.is-embedded .studio-reading-segments > li { grid-template-columns: 108px minmax(0, 1fr); gap: 14px; }
+.studio-reader.is-embedded .studio-reading-page.is-bilingual .studio-reading-prose { gap: 26px; }
+.studio-reader.is-embedded .studio-reading-page.is-bilingual .studio-reading-prose > section + section { padding-left: 26px; }
+.studio-reader.is-embedded .studio-record-files { margin-top: 26px; }
+.studio-reader.is-embedded .studio-record-files h2 { font-size: 15px; }
+.studio-reader.is-embedded .studio-record-files > header { gap: 12px; }
+.studio-reader.is-embedded .studio-record-actions { gap: 7px; }
+.studio-reader.is-embedded .studio-output-files { grid-template-columns: repeat(auto-fill, minmax(min(100%, 185px), 1fr)); gap: 8px; }
+.studio-reader.is-embedded .studio-output-files button { min-height: 65px; padding: 12px 13px; background: color-mix(in srgb, var(--surface-raised) 50%, transparent); }
+.studio-reader-empty.is-embedded { display: grid; place-content: center; justify-items: center; min-height: 570px; padding: 70px 24px; gap: 16px; }
+.studio-reader-empty.is-embedded > svg { color: var(--accent); }
+.studio-reader-empty.is-embedded h2 { font-size: 24px; letter-spacing: -.5px; }
+.studio-reader-empty.is-embedded p { max-width: 350px; color: var(--muted); font-size: 13px; }
+@media (max-width: 650px) {
+  .studio-reader.is-embedded .studio-reading-page { padding: 24px 20px; }
+  .studio-reader.is-embedded .studio-reading-page.is-bilingual .studio-reading-prose > section + section { padding-left: 0; }
+  .studio-reader.is-embedded .studio-reading-segments > li { display: flex; }
+  .studio-reader.is-embedded .studio-reader-heading { flex-wrap: wrap; gap: 10px; }
+}
+@media (pointer: coarse) { .studio-import-inline .studio-import-link-field textarea, .studio-import-inline .studio-field select, .studio-reader.is-embedded .studio-reader-search input { font-size: 16px; } }
+@starting-style { .studio-import-inline .studio-import-sheet { opacity: 1; transform: none; } }
 @media (hover: hover) and (pointer: fine) {
   .studio-media-open:hover .studio-media-name { color: var(--accent); }
   .studio-source-switch button:hover, .studio-layout-switch button:hover, .studio-reading-modes button:hover { color: var(--ink); }

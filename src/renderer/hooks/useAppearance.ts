@@ -9,11 +9,12 @@ function readPreferences(): { appearance: Appearance; material: Material } {
     const stored = JSON.parse(window.localStorage.getItem(storageKey) || '{}') as Record<string, unknown>;
     return {
       appearance: stored.appearance === 'light' || stored.appearance === 'dark' ? stored.appearance : 'system',
-      // Older versions saved "glass" even when the user never chose it.
-      // Only an explicit choice in this version overrides system transparency.
-      material: stored.material === 'solid' ? 'solid' : stored.materialVersion === 2 && stored.material === 'glass' ? 'glass' : 'system'
+      // Version 2 automatically saved system on first mount. Preserve an
+      // explicit solid choice, but let the revised glass workspace actually
+      // start with its intended material. A new explicit system choice is kept.
+      material: stored.material === 'solid' ? 'solid' : stored.materialVersion === 3 && stored.material === 'system' ? 'system' : 'glass'
     };
-  } catch { return { appearance: 'system', material: 'system' }; }
+  } catch { return { appearance: 'system', material: 'glass' }; }
 }
 
 export function initializeAppearance(): void {
@@ -34,7 +35,7 @@ export function useAppearance(): {
   useEffect(() => {
     document.documentElement.dataset.appearance = preferences.appearance;
     document.documentElement.dataset.material = preferences.material;
-    try { window.localStorage.setItem(storageKey, JSON.stringify({ ...preferences, materialVersion: 2 })); }
+    try { window.localStorage.setItem(storageKey, JSON.stringify({ ...preferences, materialVersion: 3 })); }
     catch { /* Private browsing still supports an in-memory preference. */ }
   }, [preferences]);
   return {

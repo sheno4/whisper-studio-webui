@@ -12,7 +12,8 @@ import { isImportError, matchesImportedFile } from './content/import-result';
 
 export interface ImportSheetProps {
   workspace: WhisperWorkspaceController;
-  onClose: () => void;
+  onClose?: () => void;
+  variant?: 'dialog' | 'inline';
 }
 
 interface ImportAttempt {
@@ -24,7 +25,10 @@ interface ImportAttempt {
   settled: boolean;
 }
 
-export default function ImportSheet({ workspace, onClose }: ImportSheetProps): React.JSX.Element {
+const noClose = (): void => {};
+
+export default function ImportSheet({ workspace, onClose = noClose, variant = 'dialog' }: ImportSheetProps): React.JSX.Element {
+  const inline = variant === 'inline';
   const [source, setSource] = useState<'links' | 'files'>('links');
   const [dropActive, setDropActive] = useState(false);
   const [attempt, setAttempt] = useState<ImportAttempt | null>(null);
@@ -35,7 +39,7 @@ export default function ImportSheet({ workspace, onClose }: ImportSheetProps): R
   const fileRef = useRef<HTMLInputElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
-  useDialogInteraction(panelRef, { onDismiss: onClose, initialFocusRef: inputRef });
+  useDialogInteraction(panelRef, { onDismiss: onClose, enabled: !inline, initialFocusRef: inputRef });
   const { composer } = workspace;
   const translating = composer.downloadBehavior !== 'downloadOnly';
   const downloading = composer.downloadBehavior !== 'transcribe';
@@ -56,8 +60,8 @@ export default function ImportSheet({ workspace, onClose }: ImportSheetProps): R
     const succeeded = !failed && workspace.activity.view === 'queue' && created && !attempt.taskIds.has(created.id)
       && created.sourceType === attempt.source && (!attempt.links || attempt.links.has(created.input)) && matchingFile;
     setAttempt(null);
-    if (succeeded) closeRef.current();
-  }, [attempt, workspace.snapshot?.tasks, workspace.activity.selectedTaskId, workspace.activity.view, workspace.toasts]);
+    if (succeeded && !inline) closeRef.current();
+  }, [attempt, inline, workspace.snapshot?.tasks, workspace.activity.selectedTaskId, workspace.activity.view, workspace.toasts]);
 
   const beginImport = (kind: 'link' | 'file', files?: File[]): boolean => {
     if (importingRef.current || composer.busy || switchingService) return false;
@@ -91,16 +95,16 @@ export default function ImportSheet({ workspace, onClose }: ImportSheetProps): R
   };
 
   return (
-    <div className="studio-modal-backdrop studio-import-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="studio-import-sheet" ref={panelRef} role="dialog" aria-modal="true" aria-labelledby="studio-import-title" tabIndex={-1}>
-        <GlassSurface className="studio-import-header" as="header" radius={26} tone="strong"><div><p className="studio-eyebrow">添加媒体</p><h2 id="studio-import-title">新建任务</h2></div><GlassButton onClick={onClose} aria-label="关闭新建任务"><Icon name="close" /></GlassButton></GlassSurface>
+    <div className={inline ? 'studio-import-inline' : 'studio-modal-backdrop studio-import-backdrop'} onPointerDown={inline ? undefined : (event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="studio-import-sheet" ref={panelRef} role={inline ? 'region' : 'dialog'} aria-modal={inline ? undefined : true} aria-labelledby="studio-import-title" tabIndex={inline ? undefined : -1}>
+        {inline ? <header className="studio-import-header"><h2 id="studio-import-title">添加媒体</h2><span>链接与文件直接加入队列</span></header> : <GlassSurface className="studio-import-header" as="header" radius={26} tone="strong"><div><p className="studio-eyebrow">添加媒体</p><h2 id="studio-import-title">新建任务</h2></div><GlassButton onClick={onClose} aria-label="关闭新建任务"><Icon name="close" /></GlassButton></GlassSurface>}
         <form className="studio-import-form" onSubmit={(event) => { event.preventDefault(); if (source === 'links') void submitLinks(); else void chooseFiles(); }} aria-busy={busy}>
           <fieldset className="studio-import-controls" disabled={busy}>
           <input ref={fileRef} type="file" accept="audio/*,video/*,.mkv,.flac,.m4a,.webm" multiple hidden aria-hidden="true" tabIndex={-1} onChange={(event) => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; void importDroppedFiles(files); }} />
           <div className="studio-import-source" role="group" aria-label="媒体来源"><button type="button" className={source === 'links' ? 'is-selected' : ''} aria-pressed={source === 'links'} onClick={() => setSource('links')}><Icon name="link" />在线链接</button><button type="button" className={source === 'files' ? 'is-selected' : ''} aria-pressed={source === 'files'} onClick={() => { if (composer.downloadBehavior === 'downloadOnly') workspace.setDownloadBehavior('transcribe'); setSource('files'); }}><Icon name="folder" />本地文件</button></div>
           {source === 'links' ? <div className="studio-import-link-field"><label htmlFor="studio-link-input">粘贴链接或分享文案</label><textarea autoCapitalize="off" autoCorrect="off" id="studio-link-input" ref={inputRef} rows={4} placeholder="YouTube、B 站、抖音…\n可以一次添加多个链接" value={composer.linkInput} onChange={(event) => workspace.setLinkInput(event.target.value)} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void submitLinks(); } }} spellCheck={false} aria-describedby="studio-import-link-help" /><div className="studio-field-hint" id="studio-import-link-help"><span>{linkCount ? `已识别 ${linkCount} 个链接` : '自动从分享文案中提取媒体链接'}</span><span>Ctrl / ⌘ + Enter 添加</span></div></div> : <div className={`studio-file-drop${dropActive ? ' is-active' : ''}`} onDragEnter={(event) => { if (Array.from(event.dataTransfer.types).includes('Files')) { event.preventDefault(); event.stopPropagation(); setDropActive(true); } }} onDragOver={(event) => { if (Array.from(event.dataTransfer.types).includes('Files')) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'copy'; } }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false); }} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); setDropActive(false); void importDroppedFiles(Array.from(event.dataTransfer.files)); }}><Icon name="upload" size={36} /><strong>将音频或视频拖到这里</strong><p>也可以从电脑选择多个媒体文件。</p><GlassButton disabled={composer.busy} onClick={() => void chooseFiles()} type="button"><Icon name="folder" />选择文件</GlassButton></div>}
 
-          {source === 'links' ? <fieldset className="studio-import-mode"><legend>你想做什么？</legend><div>{([{ value: 'transcribe', title: '生成文字', hint: '识别语音，生成文本与字幕', icon: 'waveform' }, { value: 'downloadThenTranscribe', title: '保存并转写', hint: '保留媒体，同时生成文字', icon: 'download' }, { value: 'downloadOnly', title: '只保存媒体', hint: '下载视频或音频文件', icon: 'file' }] as const).map((option) => <label key={option.value} className={composer.downloadBehavior === option.value ? 'is-selected' : ''}><input type="radio" name="processing-mode" value={option.value} checked={composer.downloadBehavior === option.value} onChange={() => workspace.setDownloadBehavior(option.value as DownloadBehavior)} /><Icon name={option.icon} size={22} /><strong>{option.title}</strong><small>{option.hint}</small></label>)}</div></fieldset> : null}
+          {source === 'links' ? inline ? <label className="studio-field studio-import-processing"><span>处理方式</span><select value={composer.downloadBehavior} onChange={(event) => workspace.setDownloadBehavior(event.target.value as DownloadBehavior)}><option value="transcribe">生成文字与字幕</option><option value="downloadThenTranscribe">保存媒体并转写</option><option value="downloadOnly">只保存媒体</option></select></label> : <fieldset className="studio-import-mode"><legend>你想做什么？</legend><div>{([{ value: 'transcribe', title: '生成文字', hint: '识别语音，生成文本与字幕', icon: 'waveform' }, { value: 'downloadThenTranscribe', title: '保存并转写', hint: '保留媒体，同时生成文字', icon: 'download' }, { value: 'downloadOnly', title: '只保存媒体', hint: '下载视频或音频文件', icon: 'file' }] as const).map((option) => <label key={option.value} className={composer.downloadBehavior === option.value ? 'is-selected' : ''}><input type="radio" name="processing-mode" value={option.value} checked={composer.downloadBehavior === option.value} onChange={() => workspace.setDownloadBehavior(option.value as DownloadBehavior)} /><Icon name={option.icon} size={22} /><strong>{option.title}</strong><small>{option.hint}</small></label>)}</div></fieldset> : null}
           <div className="studio-import-options">
             {(source === 'files' || translating) ? <label className="studio-field"><span>音频语言</span><select value={composer.transcriptionLanguage} onChange={(event) => workspace.setTranscriptionLanguage(event.target.value as TranscriptionLanguage)}>{TRANSCRIPTION_LANGUAGE_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select><small>混合语言建议自动检测。</small></label> : null}
             {source === 'links' && downloading ? <label className="studio-field"><span>下载规格</span><select value={composer.videoQuality} onChange={(event) => workspace.setVideoQuality(event.target.value as VideoQualityOption)}>{(['best', '1080p', '720p', '480p', 'audio'] as const).map((quality) => <option value={quality} key={quality}>{videoQualityLabels[quality]}</option>)}</select><small>保存视频或仅下载音频。</small></label> : null}

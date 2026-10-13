@@ -8,6 +8,7 @@ import './web-api';
 import './styles/glass.css';
 import './studio/studio.css';
 import './studio/content.css';
+import './studio/workbench.css';
 
 function escapeHtml(value: string): string {
   return value

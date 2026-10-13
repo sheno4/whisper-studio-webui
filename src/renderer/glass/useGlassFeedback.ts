@@ -29,8 +29,8 @@ export function useGlassFeedback(ref: RefObject<HTMLElement | null>, enabled: bo
       const { x, y, scaleX, scaleY, light } = axes;
       const resting = x.value === 0 && y.value === 0 && scaleX.value === 1 && scaleY.value === 1;
       element.style.transform = resting || reducedMotion.matches ? authoredTransform : `${authoredTransform} translate3d(${x.value.toFixed(3)}px, ${y.value.toFixed(3)}px, 0) scale(${scaleX.value.toFixed(4)}, ${scaleY.value.toFixed(4)})`.trim();
-      if (leftRim) leftRim.style.opacity = (0.78 * (1 - light.value)).toFixed(3);
-      if (rightRim) rightRim.style.opacity = (0.78 * light.value).toFixed(3);
+      if (leftRim) leftRim.style.opacity = (1.08 * (1 - light.value)).toFixed(3);
+      if (rightRim) rightRim.style.opacity = (1.12 * light.value).toFixed(3);
     };
     const settle = () => {
       cancelAnimationFrame(frame);

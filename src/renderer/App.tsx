@@ -1,220 +1,150 @@
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 
 import Icon from './components/Icon';
 import { GlassButton, GlassSurface } from './glass';
+import { useGlassCapability } from './glass/capabilities';
 import { useAppearance } from './hooks/useAppearance';
 import { useInteractionModality } from './hooks/useInteractionModality';
 import { useWhisperWorkspace } from './hooks/useWhisperWorkspace';
+import ActivityRail from './studio/ActivityRail';
 import ImportSheet from './studio/ImportSheet';
-import Library from './studio/Library';
 import Preferences from './studio/Preferences';
 import Reader from './studio/Reader';
 import { Confirmation, Notifications, SystemPanel } from './studio/SystemPanel';
-import { parseStudioRoute, routeHash, type StudioRoute } from './studio/navigation';
+import { parseStudioRoute, routeHash } from './studio/navigation';
 
 function App(): React.JSX.Element {
   const workspace = useWhisperWorkspace();
   const appearance = useAppearance();
+  const glass = useGlassCapability();
   useInteractionModality();
-  const [route, setRoute] = useState<StudioRoute>(() => parseStudioRoute(window.location.hash));
-  const [importOpen, setImportOpen] = useState(false);
   const [systemOpen, setSystemOpen] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
   const consumingDrop = useRef(false);
   const dragDepth = useRef(0);
-  const mainRef = useRef<HTMLElement>(null);
-  const lastRoute = useRef(routeHash(route));
-  const seenRecordRoute = useRef<string | null>(null);
   const snapshot = workspace.snapshot;
 
-  function navigate(next: StudioRoute): void {
-    const hash = routeHash(next);
-    if (window.location.hash !== hash) window.location.hash = hash;
-    setRoute(next);
+  function focusImport(): void {
+    const input = document.getElementById('studio-link-input') ?? document.querySelector<HTMLElement>('#workbench-import button:not(:disabled)');
+    input?.focus();
+    if (window.matchMedia('(max-width: 850px)').matches) document.getElementById('workbench-import')?.scrollIntoView({ block: 'start' });
   }
 
-  function openTask(id: string): void {
+  function selectTask(id: string): void {
     workspace.setActivityView('queue');
     workspace.setSelectedTaskId(id);
-    navigate({ kind: 'task', id });
+    window.history.replaceState(null, '', routeHash({ kind: 'task', id }));
   }
 
-  function openHistory(id: string): void {
+  function selectHistory(id: string): void {
     workspace.setActivityView('history');
     workspace.setSelectedHistoryId(id);
-    navigate({ kind: 'history', id });
+    window.history.replaceState(null, '', routeHash({ kind: 'history', id }));
   }
 
   useEffect(() => {
-    const changed = (): void => setRoute(parseStudioRoute(window.location.hash));
-    window.addEventListener('hashchange', changed);
-    return () => window.removeEventListener('hashchange', changed);
-  }, []);
-
-  useEffect(() => {
-    if (route.kind === 'task') {
-      workspace.setActivityView('queue');
-      workspace.setSelectedTaskId(route.id);
-    } else if (route.kind === 'history') {
-      workspace.setActivityView('history');
-      workspace.setSelectedHistoryId(route.id);
-    }
-  }, [route, workspace.setActivityView, workspace.setSelectedHistoryId, workspace.setSelectedTaskId]);
-
-  useLayoutEffect(() => {
-    const key = routeHash(route);
-    if (lastRoute.current === key) return;
-    lastRoute.current = key;
-    window.scrollTo({ top: 0, behavior: 'instant' });
-    mainRef.current?.focus({ preventScroll: true });
-  }, [route]);
+    const selectFromLink = (): void => {
+      const route = parseStudioRoute(window.location.hash);
+      if (route.kind === 'task') { workspace.setActivityView('queue'); workspace.setSelectedTaskId(route.id); }
+      else if (route.kind === 'history') { workspace.setActivityView('history'); workspace.setSelectedHistoryId(route.id); }
+    };
+    selectFromLink();
+    window.addEventListener('hashchange', selectFromLink);
+    return () => window.removeEventListener('hashchange', selectFromLink);
+  }, [workspace.setActivityView, workspace.setSelectedTaskId, workspace.setSelectedHistoryId]);
 
   useEffect(() => {
     const shortcut = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || document.querySelector('[role="dialog"]')) return;
-      const editable = event.target instanceof HTMLElement &&
-        (event.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName));
-      if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'n') {
-        event.preventDefault();
-        setImportOpen(true);
-      } else if (event.key === '/' && !editable && route.kind === 'library') {
-        const search = document.querySelector<HTMLInputElement>('.studio-library input[type="search"]');
-        if (search) { event.preventDefault(); search.focus(); }
-      } else if (event.key === 'Escape' && !editable && route.kind !== 'library') {
-        event.preventDefault();
-        navigate({ kind: 'library' });
-      }
+      const editable = event.target instanceof HTMLElement && (event.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName));
+      if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'n') { event.preventDefault(); focusImport(); }
+      else if (event.key === '/' && !editable) { event.preventDefault(); document.querySelector<HTMLInputElement>('.workbench-activity input[type="search"]')?.focus(); }
     };
     document.addEventListener('keydown', shortcut);
     return () => document.removeEventListener('keydown', shortcut);
-  }, [route]);
+  }, []);
 
   function dragEnter(event: DragEvent<HTMLDivElement>): void {
     if (!event.dataTransfer.types.includes('Files')) return;
-    event.preventDefault();
-    dragDepth.current += 1;
-    workspace.setIsDragging(true);
+    event.preventDefault(); dragDepth.current += 1; workspace.setIsDragging(true);
   }
-
   function dragLeave(event: DragEvent<HTMLDivElement>): void {
     if (!event.dataTransfer.types.includes('Files')) return;
-    event.preventDefault();
-    dragDepth.current = Math.max(0, dragDepth.current - 1);
-    if (dragDepth.current === 0) workspace.setIsDragging(false);
+    event.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (!dragDepth.current) workspace.setIsDragging(false);
   }
-
   function drop(event: DragEvent<HTMLDivElement>): void {
     if (!event.dataTransfer.types.includes('Files')) return;
-    event.preventDefault();
-    dragDepth.current = 0;
-    workspace.setIsDragging(false);
+    event.preventDefault(); dragDepth.current = 0; workspace.setIsDragging(false);
     const files = Array.from(event.dataTransfer.files);
-    // A local file always enters the transcription flow. Changing this first
-    // lets the preserved controller see the mode on its next render.
-    if (workspace.composer.downloadBehavior === 'downloadOnly') {
-      workspace.setDownloadBehavior('transcribe');
-      consumingDrop.current = false;
-      setDroppedFiles(files);
-    } else void workspace.addDroppedFiles(files);
+    if (workspace.composer.downloadBehavior === 'downloadOnly') { workspace.setDownloadBehavior('transcribe'); consumingDrop.current = false; setDroppedFiles(files); }
+    else void workspace.addDroppedFiles(files);
   }
-
   useEffect(() => {
     if (!droppedFiles || consumingDrop.current || workspace.composer.downloadBehavior === 'downloadOnly') return;
-    consumingDrop.current = true;
-    setDroppedFiles(null);
-    void workspace.addDroppedFiles(droppedFiles);
+    consumingDrop.current = true; setDroppedFiles(null); void workspace.addDroppedFiles(droppedFiles);
   }, [droppedFiles, workspace.composer.downloadBehavior, workspace.addDroppedFiles]);
-
   useEffect(() => {
     const clear = (): void => { dragDepth.current = 0; workspace.setIsDragging(false); };
-    window.addEventListener('blur', clear);
-    window.addEventListener('dragend', clear);
+    window.addEventListener('blur', clear); window.addEventListener('dragend', clear);
     return () => { window.removeEventListener('blur', clear); window.removeEventListener('dragend', clear); };
   }, [workspace.setIsDragging]);
 
-  const readerTask = route.kind === 'task' ? snapshot?.tasks.find((item) => item.id === route.id)
-    : route.kind === 'history' ? snapshot?.tasks.find((item) => item.id === route.id) : undefined;
-  const readerHistory = route.kind === 'history' ? snapshot?.history.find((item) => item.id === route.id) : undefined;
-  const recordExists = route.kind === 'library' || (route.kind === 'task' ? Boolean(readerTask) : Boolean(readerHistory));
-  const missingRecord = snapshot && !recordExists;
-  useLayoutEffect(() => {
-    const key = routeHash(route);
-    if (route.kind === 'library') { seenRecordRoute.current = null; return; }
-    if (recordExists) seenRecordRoute.current = key;
-    else if (snapshot && seenRecordRoute.current === key) {
-      seenRecordRoute.current = null;
-      const library = { kind: 'library' } as const;
-      window.history.replaceState(null, '', routeHash(library));
-      setRoute(library);
-    }
-  }, [route, recordExists, snapshot]);
-  const readerWorkspace = {
-    ...workspace,
-    activity: { ...workspace.activity, activeTask: readerTask, activeHistoryRecord: readerHistory }
-  };
-  const environmentIssues = snapshot?.environment.items.filter((item) => !item.ok).length ?? 0;
+  const record = workspace.activity.activeHistoryRecord ?? workspace.activity.activeTask;
+  const issues = snapshot?.environment.items.filter((item) => !item.ok).length ?? 0;
+  const materialLabel = appearance.material === 'solid' ? '实色' : glass.mode === 'optical' ? '液态玻璃' : '玻璃暂不可用';
 
-  return (
-    <div className="studio-root" onDragEnter={dragEnter} onDragLeave={dragLeave}
-      onDropCapture={(event) => { if (event.dataTransfer.types.includes('Files')) { dragDepth.current = 0; workspace.setIsDragging(false); } }}
-      onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={drop}>
-      <a className="studio-skip" href="#studio-content" onClick={(event) => { event.preventDefault(); mainRef.current?.focus(); mainRef.current?.scrollIntoView({ block: 'start' }); }}>跳转到内容</a>
-      <div aria-hidden="true" className="studio-landscape">
-        {workspace.wallpaperUrl ? <div className="studio-wallpaper" style={{ backgroundImage: `url(${JSON.stringify(workspace.wallpaperUrl)})` }} /> : null}
-      </div>
-      <GlassSurface as="header" className="studio-header" radius={28} refractionAmount={24}>
-        <div className="studio-header-content">
-          <button className="studio-brand" onClick={() => navigate({ kind: 'library' })} type="button" aria-label="Whisper Studio 媒体库">
-            <span className="studio-brand-mark"><Icon name="waveform" size={24} /></span>
-            <span>Whisper <strong>Studio</strong></span>
-          </button>
-          <nav className="studio-nav" aria-label="工作台导航">
-            <button aria-current={route.kind === 'library' ? 'page' : undefined} onClick={() => navigate({ kind: 'library' })} type="button">媒体库</button>
-            <button onClick={() => setSystemOpen(true)} type="button" className="studio-status-trigger">
-              <span className={`studio-status-dot ${environmentIssues ? 'has-issue' : ''}`} aria-hidden="true" />
-              <span>系统状态</span>
-              {environmentIssues ? <small>{environmentIssues}</small> : null}
-            </button>
-          </nav>
-          <div className="studio-header-actions">
-            <GlassButton aria-label="偏好设置" title="偏好设置" className="studio-icon-button" onClick={() => workspace.setSettingsOpen(true)} disabled={!snapshot}><Icon name="settings" /></GlassButton>
-            <GlassButton className="studio-primary studio-new-button" onClick={() => setImportOpen(true)} disabled={!snapshot} aria-keyshortcuts="Alt+N"><Icon name="upload" size={17} /><span>新建任务</span></GlassButton>
-          </div>
-        </div>
-      </GlassSurface>
+  function caption(title: string, id: string, detail: string): React.JSX.Element {
+    return <div className="workbench-caption" data-glass-drag-handle title="按住拖动，松手弹回原位">
+      <span className="workbench-grip" aria-hidden="true"><span /><span /></span>
+      <h2 id={id}>{title}</h2><span className="workbench-caption-detail">{detail}</span>
+      <span className="workbench-drag-hint" aria-hidden="true">拖动试试</span>
+    </div>;
+  }
 
-      <main id="studio-content" className="studio-content" ref={mainRef} tabIndex={-1}>
-        {!snapshot ? (
-          <section className="studio-startup" aria-live="polite">
-            <Icon name={workspace.loadError ? 'warning' : 'waveform'} size={40} />
-            <h1>{workspace.loadError ? '暂时无法连接工作台' : '正在连接工作台'}</h1>
-            <p>{workspace.loadError || '正在读取任务与运行环境。'}</p>
-            {workspace.loadError ? <GlassButton className="studio-primary" onClick={() => void workspace.reload()}><Icon name="retry" />重新连接</GlassButton> : null}
-          </section>
-        ) : missingRecord ? (
-          <section className="studio-startup">
-            <Icon name="file" size={40} />
-            <h1>这个记录已不在媒体库中</h1>
-            <p>记录可能已被移除。你可以返回查看其他任务。</p>
-            <GlassButton onClick={() => navigate({ kind: 'library' })}>返回媒体库</GlassButton>
-          </section>
-        ) : route.kind === 'library' ? (
-          <Library workspace={workspace} onOpenTask={openTask} onOpenHistory={openHistory} onNew={() => setImportOpen(true)} />
-        ) : (
-          <Reader key={`${route.kind}:${route.id}`} workspace={readerWorkspace} onBack={() => navigate({ kind: 'library' })} />
-        )}
-      </main>
-
-      {snapshot ? <footer className="studio-footer"><span>本地工作台 · 媒体保存在运行主机</span><span aria-live="polite">{workspace.activeTaskCount ? `${workspace.activeTaskCount} 个任务正在处理` : '准备就绪'}</span></footer> : null}
-
-      {importOpen && snapshot ? <ImportSheet workspace={workspace} onClose={() => setImportOpen(false)} /> : null}
-      {workspace.settingsOpen && snapshot ? <Preferences workspace={workspace} appearance={appearance} onClose={() => workspace.setSettingsOpen(false)} /> : null}
-      {systemOpen && snapshot ? <SystemPanel workspace={workspace} onClose={() => setSystemOpen(false)} onPreferences={() => { setSystemOpen(false); workspace.setSettingsOpen(true); }} /> : null}
-      {workspace.confirmation ? <Confirmation workspace={workspace} /> : null}
-      {workspace.isDragging ? <div className="studio-drop" aria-live="polite"><GlassSurface className="studio-drop-card" radius={32}><Icon name="upload" size={38} /><h2>松开，添加到工作台</h2><p>音频与视频都会使用当前任务选项。</p></GlassSurface></div> : null}
-      <Notifications toasts={workspace.toasts} />
+  return <div className="studio-root studio-workbench-root" onDragEnter={dragEnter} onDragLeave={dragLeave} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={drop} onDropCapture={(event) => { if (event.dataTransfer.types.includes('Files')) { dragDepth.current = 0; workspace.setIsDragging(false); } }}>
+    <a className="studio-skip" href="#workbench-result" onClick={(event) => { event.preventDefault(); document.getElementById('workbench-result')?.focus(); }}>跳转到结果</a>
+    <div className="studio-landscape workbench-landscape" aria-hidden="true">
+      <svg className="workbench-contours" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><path d="M-160 180C220-140 510 630 850 440S1420 0 1770 360" /><path d="M-160 212C220-108 510 662 850 472S1420 32 1770 392" /><path d="M-160 244C220-76 510 694 850 504S1420 64 1770 424" /><path d="M-160 650C300 280 650 1090 970 760S1460 460 1810 850" /></svg>
+      {workspace.wallpaperUrl ? <div className="studio-wallpaper" style={{ backgroundImage: `url(${JSON.stringify(workspace.wallpaperUrl)})` }} /> : null}
     </div>
-  );
+    <GlassSurface as="header" className="studio-header workbench-header" radius={26} refractionHeight={14} refractionAmount={26}>
+      <div className="studio-header-content">
+        <div className="studio-brand"><span className="studio-brand-mark"><Icon name="waveform" size={24} /></span><span>Whisper <strong>Studio</strong></span></div>
+        <div className="workbench-header-context"><span>工作台</span><small>{workspace.activeTaskCount ? `${workspace.activeTaskCount} 个任务处理中` : '随时开始'}</small></div>
+        <div className="studio-header-actions">
+          <GlassButton className="workbench-material-control" aria-label="切换界面材质" aria-pressed={glass.mode === 'optical'} title={glass.mode === 'solid' && appearance.material !== 'solid' ? '点击启用玻璃；浏览器支持及系统高对比度限制仍然有效' : '点击切换玻璃与实色'} onClick={() => appearance.setMaterial(glass.mode === 'optical' ? 'solid' : 'glass')}><Icon name="palette" size={17} /><span>{materialLabel}</span></GlassButton>
+          <GlassButton className="workbench-status-control" aria-label="系统状态" onClick={() => setSystemOpen(true)} disabled={!snapshot}><span className={`studio-status-dot ${issues ? 'has-issue' : ''}`} /><span>系统状态</span>{issues ? <small>{issues}</small> : null}</GlassButton>
+          <GlassButton className="studio-icon-button" aria-label="偏好设置" title="偏好设置" onClick={() => workspace.setSettingsOpen(true)} disabled={!snapshot}><Icon name="settings" /></GlassButton>
+        </div>
+      </div>
+    </GlassSurface>
+
+    <main className="studio-content workbench-main" aria-label="工作台">
+      <h1 className="studio-visually-hidden">Whisper Studio 工作台</h1>
+      {!snapshot ? <section className="studio-startup" aria-live="polite"><Icon name={workspace.loadError ? 'warning' : 'waveform'} size={40} /><h2>{workspace.loadError ? '暂时无法连接工作台' : '正在连接工作台'}</h2><p>{workspace.loadError || '正在读取任务与运行环境。'}</p>{workspace.loadError ? <GlassButton onClick={() => void workspace.reload()}>重新连接</GlassButton> : null}</section> : <div className="workbench-grid">
+        <GlassSurface className="workbench-pane workbench-input-pane" as="section" radius={30} refractionHeight={22} refractionAmount={34} draggable id="workbench-import" aria-labelledby="workbench-import-heading">
+          {caption('导入媒体', 'workbench-import-heading', '链接 · 本地文件')}
+          <ImportSheet workspace={workspace} variant="inline" />
+        </GlassSurface>
+        <GlassSurface className="workbench-pane workbench-activity-pane" as="section" radius={30} refractionHeight={22} refractionAmount={34} draggable aria-labelledby="workbench-activity-heading">
+          {caption('任务', 'workbench-activity-heading', `${snapshot.tasks.length} 个任务`)}
+          <ActivityRail workspace={workspace} onSelectTask={selectTask} onSelectHistory={selectHistory} />
+        </GlassSurface>
+        <GlassSurface className="workbench-pane workbench-result-pane" as="section" radius={30} refractionHeight={22} refractionAmount={34} draggable id="workbench-result" aria-labelledby="workbench-result-heading" tabIndex={-1}>
+          {caption('结果', 'workbench-result-heading', '转写 · 翻译 · 导出')}
+          <div className="workbench-reading-scroll">{record ? <Reader key={`${workspace.activity.view}:${record.id}`} workspace={workspace} embedded /> : <div className="workbench-empty"><Icon name="waveform" size={38} /><h3>让声音变成文字</h3><p>从左侧添加媒体，或选择一个任务。<br />转写、译文、字幕与日志会显示在这里。</p><GlassButton onClick={focusImport}><Icon name="upload" size={17} />添加媒体</GlassButton></div>}</div>
+        </GlassSurface>
+      </div>}
+    </main>
+    <footer className="studio-footer workbench-footer"><span>{snapshot ? `${snapshot.settings.transcriptionEngine} · ${snapshot.settings.whisperModel}` : '本地工作台'}<span className="workbench-footer-separator">·</span>媒体保存在运行主机</span><span>按住面板标题可拖动<span className="workbench-footer-separator">·</span>Alt + N 添加媒体</span></footer>
+    <nav className="workbench-mobile-jumps" aria-label="工作台定位"><a href="#workbench-import" onClick={(event) => { event.preventDefault(); focusImport(); }}>导入</a><a href="#workbench-activity-heading">任务</a><a href="#workbench-result" onClick={(event) => { event.preventDefault(); document.getElementById('workbench-result')?.scrollIntoView({ block: 'start' }); }}>结果</a></nav>
+    {workspace.settingsOpen && snapshot ? <Preferences workspace={workspace} appearance={appearance} onClose={() => workspace.setSettingsOpen(false)} /> : null}
+    {systemOpen && snapshot ? <SystemPanel workspace={workspace} onClose={() => setSystemOpen(false)} onPreferences={() => { setSystemOpen(false); workspace.setSettingsOpen(true); }} /> : null}
+    {workspace.confirmation ? <Confirmation workspace={workspace} /> : null}
+    {workspace.isDragging ? <div className="studio-drop" aria-live="polite"><GlassSurface className="studio-drop-card" radius={32}><Icon name="upload" size={38} /><h2>松开，添加媒体</h2><p>使用当前的语言与翻译选项。</p></GlassSurface></div> : null}
+    <Notifications toasts={workspace.toasts} />
+  </div>;
 }
 
 export default App;

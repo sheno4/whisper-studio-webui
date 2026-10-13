@@ -3,6 +3,7 @@ import { useGlassCapability } from './capabilities';
 import { createLensMaps, type LensMaps } from './lens-map';
 import { spectralSamples, type CornerRadii } from './lens-math';
 import { useGlassFeedback } from './useGlassFeedback';
+import { useGlassDrag } from './useGlassDrag';
 
 type OpticalProps = {
   radius?: number;
@@ -12,7 +13,7 @@ type OpticalProps = {
   interactive?: boolean;
   tone?: 'clear' | 'regular' | 'strong';
 };
-export type GlassSurfaceProps = HTMLAttributes<HTMLElement> & OpticalProps & { as?: 'div' | 'section' | 'nav' | 'header' | 'aside' | 'footer' };
+export type GlassSurfaceProps = Omit<HTMLAttributes<HTMLElement>, 'draggable'> & OpticalProps & { as?: 'div' | 'section' | 'nav' | 'header' | 'aside' | 'footer'; draggable?: boolean; dragHandle?: string };
 export type GlassButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & OpticalProps;
 type OpticalState = { maps: LensMaps; width: number; height: number };
 
@@ -88,18 +89,21 @@ function OpticalLayers({ id, optics }: { id: string; optics?: OpticalState }) {
     {optics && <LensDefinitions id={id} optics={optics} />}
     <span className="glass-surface__backdrop" aria-hidden="true" style={optics ? { backdropFilter: `url(#${id})`, WebkitBackdropFilter: `url(#${id})` } : undefined} />
     {optics && <>
+      <span className="glass-surface__reflection" aria-hidden="true" />
+      {optics.maps.ambient && <span className="glass-surface__rim" data-glass-rim="ambient" aria-hidden="true" style={{ backgroundImage: `url("${optics.maps.ambient}")` }} />}
       <span className="glass-surface__rim" data-glass-rim="left" aria-hidden="true" style={{ backgroundImage: `url("${optics.maps.highlight[0]}")` }} />
       <span className="glass-surface__rim" data-glass-rim="right" aria-hidden="true" style={{ backgroundImage: `url("${optics.maps.highlight[1]}")` }} />
     </>}
   </>;
 }
 
-export const GlassSurface = forwardRef<HTMLElement, GlassSurfaceProps>(function GlassSurface({ as = 'div', className = '', children, radius, refractionHeight = 12, refractionAmount = 20, dispersion = true, interactive = false, tone = 'regular', style, ...props }, forwardedRef) {
+export const GlassSurface = forwardRef<HTMLElement, GlassSurfaceProps>(function GlassSurface({ as = 'div', className = '', children, radius, refractionHeight = 16, refractionAmount = 28, dispersion = true, interactive = false, draggable = false, dragHandle = '[data-glass-drag-handle]', tone = 'regular', style, ...props }, forwardedRef) {
   const ref = useRef<HTMLElement>(null);
   useImperativeHandle(forwardedRef, () => ref.current!, []);
   const id = `glass-lens-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const { optics, mode, reason } = useLens(ref, refractionAmount, refractionHeight, dispersion, radius);
-  useGlassFeedback(ref, interactive);
+  useGlassFeedback(ref, interactive && !draggable);
+  useGlassDrag(ref, draggable, dragHandle);
   return createElement(as, {
     ...props, ref,
     className: `glass-surface ${className}`.trim(),
@@ -108,17 +112,20 @@ export const GlassSurface = forwardRef<HTMLElement, GlassSurfaceProps>(function 
     'data-glass-fallback': mode === 'solid' ? reason : undefined,
     'data-glass-tone': tone,
     'data-glass-interactive': interactive || undefined,
+    'data-glass-draggable': draggable || undefined,
+    'data-glass-height': refractionHeight,
+    'data-glass-amount': refractionAmount,
     style: { ...(radius === undefined ? {} : { '--glass-radius': `${radius}px` }), ...style } as CSSProperties
   }, <><OpticalLayers id={id} optics={optics} /><span className="glass-surface__content">{children}</span></>);
 });
 
-export const GlassButton = forwardRef<HTMLButtonElement, GlassButtonProps>(function GlassButton({ className = '', children, radius = 999, refractionHeight = 8, refractionAmount = 14, dispersion = true, interactive = true, tone = 'regular', style, type = 'button', ...props }, forwardedRef) {
+export const GlassButton = forwardRef<HTMLButtonElement, GlassButtonProps>(function GlassButton({ className = '', children, radius = 999, refractionHeight = 10, refractionAmount = 20, dispersion = true, interactive = true, tone = 'regular', style, type = 'button', ...props }, forwardedRef) {
   const ref = useRef<HTMLButtonElement>(null);
   useImperativeHandle(forwardedRef, () => ref.current!, []);
   const id = `glass-lens-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const { optics, mode, reason } = useLens(ref, refractionAmount, refractionHeight, dispersion, radius);
   useGlassFeedback(ref, interactive && !props.disabled);
-  return <button {...props} ref={ref} type={type} className={`glass-button glass-surface ${className}`.trim()} data-glass-mode={mode} data-glass-source={mode === 'optical' ? 'live-dom' : undefined} data-glass-fallback={mode === 'solid' ? reason : undefined} data-glass-tone={tone} data-glass-interactive={interactive || undefined} style={{ '--glass-radius': `${radius}px`, ...style } as CSSProperties}>
+  return <button {...props} ref={ref} type={type} className={`glass-button glass-surface ${className}`.trim()} data-glass-mode={mode} data-glass-source={mode === 'optical' ? 'live-dom' : undefined} data-glass-fallback={mode === 'solid' ? reason : undefined} data-glass-tone={tone} data-glass-interactive={interactive || undefined} data-glass-height={refractionHeight} data-glass-amount={refractionAmount} style={{ '--glass-radius': `${radius}px`, ...style } as CSSProperties}>
     <OpticalLayers id={id} optics={optics} />
     <span className="glass-surface__content glass-button__content">{children}</span>
   </button>;
