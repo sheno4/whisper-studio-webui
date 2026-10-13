@@ -1,0 +1,82 @@
+/* Native optical sampling is confined to controls/chrome; foreground stays sharp. */
+.glass-surface {
+  position: relative;
+  z-index: 0;
+  border: 1px solid color-mix(in srgb, var(--ink, CanvasText) 9%, transparent);
+  border-radius: var(--glass-radius, 24px);
+  background: transparent;
+  color: var(--glass-foreground, var(--ink, CanvasText));
+  box-shadow: var(--glass-shadow, 0 6px 24px rgb(18 26 50 / .07));
+}
+.glass-surface__content { display: contents; }
+.glass-surface__definitions { position: absolute; overflow: hidden; pointer-events: none; }
+.glass-surface__backdrop, .glass-surface__rim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.glass-surface__backdrop {
+  /* An actual browser backdrop, not an image/DOM clone or captured screenshot. */
+  overflow: clip;
+  background: var(--glass-tint, color-mix(in srgb, var(--surface, Canvas) 20%, transparent));
+}
+.glass-surface[data-glass-tone="clear"] > .glass-surface__backdrop { background: var(--glass-tint, color-mix(in srgb, var(--surface, Canvas) 12%, transparent)); }
+.glass-surface[data-glass-tone="strong"] > .glass-surface__backdrop { background: var(--glass-tint, color-mix(in srgb, var(--surface, Canvas) 60%, transparent)); }
+.glass-surface__rim {
+  z-index: -1;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  opacity: .585;
+  mix-blend-mode: screen;
+}
+.glass-surface__rim[data-glass-rim="right"] { opacity: .195; }
+.glass-surface[data-glass-mode="solid"] > .glass-surface__backdrop,
+.glass-surface[data-glass-mode="pending"] > .glass-surface__backdrop {
+  background: var(--glass-solid, var(--surface, Canvas));
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.glass-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-height: 42px;
+  padding: .625rem 1rem;
+  font: inherit;
+  font-size: .875rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  transition: opacity 140ms var(--ease-out, cubic-bezier(.23, 1, .32, 1));
+}
+.glass-button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent, #007aff) 65%, transparent); outline-offset: 3px; }
+.glass-button:disabled { cursor: default; opacity: .45; }
+.glass-button[data-glass-pressed="true"] { border-color: color-mix(in srgb, var(--ink, CanvasText) 30%, transparent); }
+@media (hover: hover) and (pointer: fine) {
+  .glass-button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--ink, CanvasText) 24%, transparent); }
+}
+@media (pointer: coarse) { .glass-button { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .glass-button { transition: none; } }
+@media (prefers-reduced-transparency: reduce) {
+  :root:not([data-material="glass"]) .glass-surface > .glass-surface__backdrop { background: var(--glass-solid, var(--surface, Canvas)); backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  :root:not([data-material="glass"]) .glass-surface__rim { display: none; }
+}
+@media (prefers-contrast: more) {
+  .glass-surface > .glass-surface__backdrop { background: var(--glass-solid, var(--surface, Canvas)); backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  .glass-surface__rim { display: none; }
+}
+:root[data-material="solid"] .glass-surface > .glass-surface__backdrop { background: var(--glass-solid, var(--surface, Canvas)); backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+:root[data-material="solid"] .glass-surface__rim { display: none; }
+@media (forced-colors: active) {
+  .glass-surface { border-color: ButtonText; box-shadow: none; color: CanvasText; }
+  .glass-surface > .glass-surface__backdrop { background: Canvas; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  .glass-surface__rim { display: none; }
+  .glass-button:focus-visible { outline-color: Highlight; }
+}

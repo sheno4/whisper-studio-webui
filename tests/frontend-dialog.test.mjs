@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const { buildSync } = createRequire(require.resolve('tsx'))('esbuild');
 const code = buildSync({
   stdin: {
-    contents: "export { registerDialog } from './src/renderer/hooks/dialog-interactions'; export { getOverlayVariants, getToastVariants } from './src/renderer/motion';",
+    contents: "export { registerDialog } from './src/renderer/hooks/dialog-interactions';",
     resolveDir: fileURLToPath(new URL('..', import.meta.url))
   }, bundle: true, platform: 'node', format: 'cjs', write: false
 }).outputFiles[0].text;
@@ -124,26 +124,4 @@ test('a sibling confirmation promotes out of the settings inert tree and only th
   releaseSettings();
   assert.equal(f.document.activeElement, f.opener);
   assert.equal(f.document.body.style.overflow, 'auto');
-});
-
-test('keyboard overlays have no animation, reduced motion changes opacity without movement and paths remain symmetric', () => {
-  const f = fixture();
-  for (const kind of ['panel', 'popover', 'backdrop']) {
-    const keyboard = f.getOverlayVariants(kind, false, true);
-    assert.equal(keyboard.visible.transition.duration, 0);
-    assert.equal(keyboard.exit.transition.duration, 0);
-    assert.equal(keyboard.hidden.transform, keyboard.visible.transform);
-    const reduced = f.getOverlayVariants(kind, true);
-    assert.equal(reduced.hidden.transform, reduced.visible.transform);
-    assert.ok(reduced.visible.transition.duration <= 0.16);
-  }
-  const popover = f.getOverlayVariants('popover');
-  assert.equal(popover.hidden.transform, popover.exit.transform);
-  assert.equal(popover.visible.transition.duration, 0.18);
-  const toast = f.getToastVariants(true);
-  assert.equal(toast.hidden.transform, toast.visible.transform);
-  const keyboardToast = f.getToastVariants(false, true);
-  assert.equal(keyboardToast.visible.transition.duration, 0);
-  assert.equal(keyboardToast.exit.transition.duration, 0);
-  assert.equal(keyboardToast.hidden.transform, keyboardToast.visible.transform);
 });

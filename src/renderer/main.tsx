@@ -5,7 +5,9 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { initializeAppearance } from './hooks/useAppearance';
 import './web-api';
-import './styles/app.css';
+import './styles/glass.css';
+import './studio/studio.css';
+import './studio/content.css';
 
 function escapeHtml(value: string): string {
   return value
@@ -23,14 +25,14 @@ const showFatalError = (message: string): void => {
   }
 
   root.innerHTML = `
-    <section class="fatal-screen">
-      <article class="fatal-card glass-float">
-        <p class="eyebrow">WebUI Error</p>
+    <section class="studio-startup">
+      <article>
+        <p class="studio-eyebrow">WebUI Error</p>
         <h1>Whisper Studio WebUI 启动失败</h1>
         <pre>${escapeHtml(message)}</pre>
-        <div class="fatal-actions">
-          <button class="primary-button" id="fatal-reload">重新加载</button>
-          <button class="ghost-button" id="fatal-close">关闭页面</button>
+        <div class="studio-confirm-actions">
+          <button class="studio-button studio-primary" id="fatal-reload">重新加载</button>
+          <button class="studio-button" id="fatal-close">关闭页面</button>
         </div>
       </article>
     </section>
@@ -45,21 +47,29 @@ const showFatalError = (message: string): void => {
   });
 };
 
-window.addEventListener('error', (event) => {
-  showFatalError(event.error?.stack || event.message || 'Unknown renderer error');
-});
-
-window.addEventListener('unhandledrejection', (event) => {
-  const reason = event.reason instanceof Error ? event.reason.stack || event.reason.message : String(event.reason);
-  showFatalError(reason);
-});
+// A failed background operation must not tear down a healthy React workspace.
+// API actions display their own errors; only a render failure reaches this UI.
+class RenderBoundary extends React.Component<React.PropsWithChildren, { error?: Error }> {
+  state: { error?: Error } = {};
+  static getDerivedStateFromError(error: Error): { error: Error } { return { error }; }
+  componentDidCatch(error: Error): void { console.error('Whisper Studio render failure', error); }
+  render(): React.ReactNode {
+    if (!this.state.error) return this.props.children;
+    return <section className="studio-startup" role="alert">
+      <h1>工作台遇到了问题</h1>
+      <p>任务会继续在后台处理，重新加载即可再次连接。</p>
+      <pre className="studio-fatal-details">{this.state.error.message}</pre>
+      <button className="studio-button studio-primary" onClick={() => window.location.reload()}>重新加载</button>
+    </section>;
+  }
+}
 
 try {
   initializeAppearance();
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <React.StrictMode>
       <MotionConfig reducedMotion="user">
-        <App />
+        <RenderBoundary><App /></RenderBoundary>
       </MotionConfig>
     </React.StrictMode>
   );

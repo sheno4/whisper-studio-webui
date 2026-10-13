@@ -1,254 +1,219 @@
-import { AnimatePresence, motion } from 'framer-motion';
-import type { DragEvent } from 'react';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react';
 
-import ActivityPanel from './components/ActivityPanel';
-import AppFooter from './components/AppFooter';
-import AppHeader from './components/AppHeader';
-import ConfirmDialog from './components/ConfirmDialog';
-import EnvironmentBanner from './components/EnvironmentBanner';
 import Icon from './components/Icon';
-import InputComposer from './components/InputComposer';
-import LiquidBackdrop from './components/LiquidBackdrop';
-import ModelPreparationPanel from './components/ModelPreparationPanel';
-import SettingsModal from './components/SettingsModal';
-import StartupState from './components/StartupState';
-import TaskDetail from './components/TaskDetail';
-import ToastStack from './components/ToastStack';
-import { useWhisperWorkspace } from './hooks/useWhisperWorkspace';
+import { GlassButton, GlassSurface } from './glass';
 import { useAppearance } from './hooks/useAppearance';
 import { useInteractionModality } from './hooks/useInteractionModality';
-import { quickTransition } from './motion';
+import { useWhisperWorkspace } from './hooks/useWhisperWorkspace';
+import ImportSheet from './studio/ImportSheet';
+import Library from './studio/Library';
+import Preferences from './studio/Preferences';
+import Reader from './studio/Reader';
+import { Confirmation, Notifications, SystemPanel } from './studio/SystemPanel';
+import { parseStudioRoute, routeHash, type StudioRoute } from './studio/navigation';
 
 function App(): React.JSX.Element {
   const workspace = useWhisperWorkspace();
   const appearance = useAppearance();
   useInteractionModality();
-  const [mobilePane, setMobilePane] = useState<'import' | 'tasks' | 'results'>('import');
-  const [importExpanded, setImportExpanded] = useState(true);
-  const focusResultAfterSelection = useRef(false);
+  const [route, setRoute] = useState<StudioRoute>(() => parseStudioRoute(window.location.hash));
+  const [importOpen, setImportOpen] = useState(false);
+  const [systemOpen, setSystemOpen] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
+  const consumingDrop = useRef(false);
   const dragDepth = useRef(0);
+  const mainRef = useRef<HTMLElement>(null);
+  const lastRoute = useRef(routeHash(route));
+  const seenRecordRoute = useRef<string | null>(null);
   const snapshot = workspace.snapshot;
 
+  function navigate(next: StudioRoute): void {
+    const hash = routeHash(next);
+    if (window.location.hash !== hash) window.location.hash = hash;
+    setRoute(next);
+  }
+
+  function openTask(id: string): void {
+    workspace.setActivityView('queue');
+    workspace.setSelectedTaskId(id);
+    navigate({ kind: 'task', id });
+  }
+
+  function openHistory(id: string): void {
+    workspace.setActivityView('history');
+    workspace.setSelectedHistoryId(id);
+    navigate({ kind: 'history', id });
+  }
+
+  useEffect(() => {
+    const changed = (): void => setRoute(parseStudioRoute(window.location.hash));
+    window.addEventListener('hashchange', changed);
+    return () => window.removeEventListener('hashchange', changed);
+  }, []);
+
+  useEffect(() => {
+    if (route.kind === 'task') {
+      workspace.setActivityView('queue');
+      workspace.setSelectedTaskId(route.id);
+    } else if (route.kind === 'history') {
+      workspace.setActivityView('history');
+      workspace.setSelectedHistoryId(route.id);
+    }
+  }, [route, workspace.setActivityView, workspace.setSelectedHistoryId, workspace.setSelectedTaskId]);
+
   useLayoutEffect(() => {
-    if (!focusResultAfterSelection.current) return;
-    focusResultAfterSelection.current = false;
-    document.getElementById('result-stage')?.focus({ preventScroll: true });
-  }, [mobilePane]);
+    const key = routeHash(route);
+    if (lastRoute.current === key) return;
+    lastRoute.current = key;
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    mainRef.current?.focus({ preventScroll: true });
+  }, [route]);
 
-  function selectTask(taskId: string): void {
-    workspace.setSelectedTaskId(taskId);
-    if (window.matchMedia('(max-width: 900px)').matches) {
-      focusResultAfterSelection.current = true;
-      setMobilePane('results');
-    }
-  }
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || document.querySelector('[role="dialog"]')) return;
+      const editable = event.target instanceof HTMLElement &&
+        (event.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName));
+      if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        setImportOpen(true);
+      } else if (event.key === '/' && !editable && route.kind === 'library') {
+        const search = document.querySelector<HTMLInputElement>('.studio-library input[type="search"]');
+        if (search) { event.preventDefault(); search.focus(); }
+      } else if (event.key === 'Escape' && !editable && route.kind !== 'library') {
+        event.preventDefault();
+        navigate({ kind: 'library' });
+      }
+    };
+    document.addEventListener('keydown', shortcut);
+    return () => document.removeEventListener('keydown', shortcut);
+  }, [route]);
 
-  function selectHistory(historyId: string): void {
-    workspace.setSelectedHistoryId(historyId);
-    if (window.matchMedia('(max-width: 900px)').matches) {
-      focusResultAfterSelection.current = true;
-      setMobilePane('results');
-    }
-  }
-
-  function handleDragEnter(event: DragEvent<HTMLElement>): void {
+  function dragEnter(event: DragEvent<HTMLDivElement>): void {
+    if (!event.dataTransfer.types.includes('Files')) return;
     event.preventDefault();
-    if (!event.dataTransfer.types.includes('Files')) {
-      return;
-    }
-
     dragDepth.current += 1;
     workspace.setIsDragging(true);
   }
 
-  function handleDragLeave(event: DragEvent<HTMLElement>): void {
+  function dragLeave(event: DragEvent<HTMLDivElement>): void {
+    if (!event.dataTransfer.types.includes('Files')) return;
     event.preventDefault();
     dragDepth.current = Math.max(0, dragDepth.current - 1);
-    if (dragDepth.current === 0) {
-      workspace.setIsDragging(false);
-    }
+    if (dragDepth.current === 0) workspace.setIsDragging(false);
   }
 
-  function handleDrop(event: DragEvent<HTMLElement>): void {
+  function drop(event: DragEvent<HTMLDivElement>): void {
+    if (!event.dataTransfer.types.includes('Files')) return;
     event.preventDefault();
     dragDepth.current = 0;
     workspace.setIsDragging(false);
-    void workspace.addDroppedFiles(Array.from(event.dataTransfer.files));
+    const files = Array.from(event.dataTransfer.files);
+    // A local file always enters the transcription flow. Changing this first
+    // lets the preserved controller see the mode on its next render.
+    if (workspace.composer.downloadBehavior === 'downloadOnly') {
+      workspace.setDownloadBehavior('transcribe');
+      consumingDrop.current = false;
+      setDroppedFiles(files);
+    } else void workspace.addDroppedFiles(files);
   }
 
+  useEffect(() => {
+    if (!droppedFiles || consumingDrop.current || workspace.composer.downloadBehavior === 'downloadOnly') return;
+    consumingDrop.current = true;
+    setDroppedFiles(null);
+    void workspace.addDroppedFiles(droppedFiles);
+  }, [droppedFiles, workspace.composer.downloadBehavior, workspace.addDroppedFiles]);
+
+  useEffect(() => {
+    const clear = (): void => { dragDepth.current = 0; workspace.setIsDragging(false); };
+    window.addEventListener('blur', clear);
+    window.addEventListener('dragend', clear);
+    return () => { window.removeEventListener('blur', clear); window.removeEventListener('dragend', clear); };
+  }, [workspace.setIsDragging]);
+
+  const readerTask = route.kind === 'task' ? snapshot?.tasks.find((item) => item.id === route.id)
+    : route.kind === 'history' ? snapshot?.tasks.find((item) => item.id === route.id) : undefined;
+  const readerHistory = route.kind === 'history' ? snapshot?.history.find((item) => item.id === route.id) : undefined;
+  const recordExists = route.kind === 'library' || (route.kind === 'task' ? Boolean(readerTask) : Boolean(readerHistory));
+  const missingRecord = snapshot && !recordExists;
+  useLayoutEffect(() => {
+    const key = routeHash(route);
+    if (route.kind === 'library') { seenRecordRoute.current = null; return; }
+    if (recordExists) seenRecordRoute.current = key;
+    else if (snapshot && seenRecordRoute.current === key) {
+      seenRecordRoute.current = null;
+      const library = { kind: 'library' } as const;
+      window.history.replaceState(null, '', routeHash(library));
+      setRoute(library);
+    }
+  }, [route, recordExists, snapshot]);
+  const readerWorkspace = {
+    ...workspace,
+    activity: { ...workspace.activity, activeTask: readerTask, activeHistoryRecord: readerHistory }
+  };
+  const environmentIssues = snapshot?.environment.items.filter((item) => !item.ok).length ?? 0;
+
   return (
-    <main
-      className={`app-root ${workspace.isDragging ? 'is-dragging' : ''}`}
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={handleDrop}
-    >
-      <a className="skip-link" href="#workspace-content">跳转到工作台</a>
-      <LiquidBackdrop wallpaperUrl={workspace.wallpaperUrl} />
-
-      {snapshot ? (
-        <div
-          className="desktop-shell"
-          data-mobile-pane={mobilePane}
-        >
-          <AppHeader
-            appearance={appearance.appearance}
-            material={appearance.material}
-            activeTaskCount={workspace.activeTaskCount}
-            activeTranslationServiceId={snapshot.settings.activeTranslationServiceId}
-            historyCount={snapshot.history.length}
-            onChangeService={(serviceId) => void workspace.changeTranslationService(serviceId)}
-            onOpenSettings={() => workspace.setSettingsOpen(true)}
-            onCycleAppearance={appearance.cycleAppearance}
-            onToggleMaterial={appearance.toggleMaterial}
-            queueCount={snapshot.tasks.length}
-            serviceBusy={workspace.savingServiceId !== null}
-            translationServices={snapshot.settings.translationServices}
-          />
-
-          <div className="environment-slot">
-            <EnvironmentBanner environment={snapshot.environment} />
-            <ModelPreparationPanel preparations={snapshot.modelPreparations} settings={snapshot.settings} />
-          </div>
-
-          <section className="workspace-grid" id="workspace-content" aria-label="音视频工作台" tabIndex={-1}>
-            <aside className="workspace-sidebar" aria-label="导入与任务">
-              <details className="workspace-import" open={importExpanded} onToggle={(event) => setImportExpanded(event.currentTarget.open)}>
-                <summary className="workspace-import-toggle">
-                  <Icon name="upload" size={17} />
-                  <span>新建任务</span>
-                  <Icon className="workspace-import-caret" name="chevron-down" size={16} />
-                </summary>
-                <section className="import-stage" id="import-stage" aria-label="新建任务">
-                  <InputComposer
-                    busy={workspace.composer.busy}
-                    downloadBehavior={workspace.composer.downloadBehavior}
-                    linkInput={workspace.composer.linkInput}
-                    onAddLinks={() => void workspace.addLinks()}
-                    onDownloadBehaviorChange={workspace.setDownloadBehavior}
-                    onLinkInputChange={workspace.setLinkInput}
-                    onPickFiles={() => void workspace.pickFiles()}
-                    onToggleTranslate={workspace.setTranslateNext}
-                    onTranscriptionLanguageChange={workspace.setTranscriptionLanguage}
-                    onVideoQualityChange={workspace.setVideoQuality}
-                    transcriptionLanguage={workspace.composer.transcriptionLanguage}
-                    translateNext={workspace.composer.translateNext}
-                    videoQuality={workspace.composer.videoQuality}
-                  />
-                </section>
-              </details>
-
-              <section className="activity-stage" id="activity-stage" aria-label="任务中心">
-                <ActivityPanel
-                  history={snapshot.history}
-                  onCancelTask={(taskId) => void workspace.cancelTask(taskId)}
-                  onChangeView={workspace.setActivityView}
-                  onClearHistory={workspace.requestClearHistory}
-                  onRemoveHistory={(historyId) => void workspace.removeHistory(historyId)}
-                  onRemoveTask={(taskId) => void workspace.removeTask(taskId)}
-                  onRetryTask={(taskId) => void workspace.retryTask(taskId)}
-                  onRevealHistory={(targetPath) => void workspace.revealPath(targetPath)}
-                  onSelectHistory={selectHistory}
-                  onSelectTask={selectTask}
-                  selectedHistoryId={workspace.activity.selectedHistoryId}
-                  selectedTaskId={workspace.activity.selectedTaskId}
-                  tasks={snapshot.tasks}
-                  view={workspace.activity.view}
-                />
-              </section>
-            </aside>
-
-            <section className="result-stage" id="result-stage" aria-label="任务结果" tabIndex={-1}>
-              <TaskDetail
-                historyRecord={workspace.activity.activeHistoryRecord}
-                onCopy={(text, label) => void workspace.copyText(text, label)}
-                onDeleteDirectory={workspace.requestDeleteTaskDirectory}
-                onExport={(taskId, kind) => void workspace.exportTaskFile(taskId, kind)}
-                onOpenOutputDir={(taskId) => void workspace.openOutputDirectory(taskId)}
-                onOpenSource={(taskId) => void workspace.openSourceLocation(taskId)}
-                onRemoveHistory={(historyId) => void workspace.removeHistory(historyId)}
-                onRevealPath={(targetPath) => void workspace.revealPath(targetPath)}
-                task={workspace.activity.activeTask}
-              />
-            </section>
-          </section>
-
-          <div className="footer-slot">
-            <AppFooter {...workspace.footer} />
-          </div>
-          <nav className="mobile-workspace-nav glass-chrome" aria-label="工作台区域">
-            {([
-              { value: 'import', label: '新任务', icon: 'upload', target: 'import-stage' },
-              { value: 'tasks', label: '任务', icon: 'queue', target: 'activity-stage' },
-              { value: 'results', label: '结果', icon: 'file', target: 'result-stage' }
-            ] as const).map((item) => (
-              <button
-                aria-controls={item.target}
-                aria-pressed={mobilePane === item.value}
-                className={mobilePane === item.value ? 'is-active' : ''}
-                key={item.value}
-                onClick={() => {
-                  setMobilePane(item.value);
-                  if (item.value === 'import') setImportExpanded(true);
-                }}
-                type="button"
-              >
-                <Icon name={item.icon} size={19} />
-                <span>{item.label}</span>
-                {item.value === 'tasks' && workspace.activeTaskCount > 0 ? <small>{workspace.activeTaskCount}</small> : null}
-              </button>
-            ))}
+    <div className="studio-root" onDragEnter={dragEnter} onDragLeave={dragLeave}
+      onDropCapture={(event) => { if (event.dataTransfer.types.includes('Files')) { dragDepth.current = 0; workspace.setIsDragging(false); } }}
+      onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={drop}>
+      <a className="studio-skip" href="#studio-content" onClick={(event) => { event.preventDefault(); mainRef.current?.focus(); mainRef.current?.scrollIntoView({ block: 'start' }); }}>跳转到内容</a>
+      <div aria-hidden="true" className="studio-landscape">
+        {workspace.wallpaperUrl ? <div className="studio-wallpaper" style={{ backgroundImage: `url(${JSON.stringify(workspace.wallpaperUrl)})` }} /> : null}
+      </div>
+      <GlassSurface as="header" className="studio-header" radius={28} refractionAmount={24}>
+        <div className="studio-header-content">
+          <button className="studio-brand" onClick={() => navigate({ kind: 'library' })} type="button" aria-label="Whisper Studio 媒体库">
+            <span className="studio-brand-mark"><Icon name="waveform" size={24} /></span>
+            <span>Whisper <strong>Studio</strong></span>
+          </button>
+          <nav className="studio-nav" aria-label="工作台导航">
+            <button aria-current={route.kind === 'library' ? 'page' : undefined} onClick={() => navigate({ kind: 'library' })} type="button">媒体库</button>
+            <button onClick={() => setSystemOpen(true)} type="button" className="studio-status-trigger">
+              <span className={`studio-status-dot ${environmentIssues ? 'has-issue' : ''}`} aria-hidden="true" />
+              <span>系统状态</span>
+              {environmentIssues ? <small>{environmentIssues}</small> : null}
+            </button>
           </nav>
+          <div className="studio-header-actions">
+            <GlassButton aria-label="偏好设置" title="偏好设置" className="studio-icon-button" onClick={() => workspace.setSettingsOpen(true)} disabled={!snapshot}><Icon name="settings" /></GlassButton>
+            <GlassButton className="studio-primary studio-new-button" onClick={() => setImportOpen(true)} disabled={!snapshot} aria-keyshortcuts="Alt+N"><Icon name="upload" size={17} /><span>新建任务</span></GlassButton>
+          </div>
         </div>
-      ) : (
-        <StartupState error={workspace.loadError} onRetry={() => void workspace.reload()} />
-      )}
+      </GlassSurface>
 
-      <AnimatePresence>
-        {workspace.settingsOpen && snapshot ? (
-          <SettingsModal
-            key="settings"
-            modelPreparations={snapshot.modelPreparations}
-            onClose={() => workspace.setSettingsOpen(false)}
-            onPickDirectory={() => window.whisperWeb.pickDirectory()}
-            onPickWallpaper={() => window.whisperWeb.pickWallpaperFile()}
-            onSave={workspace.saveSettings}
-            settings={snapshot.settings}
-          />
-        ) : null}
+      <main id="studio-content" className="studio-content" ref={mainRef} tabIndex={-1}>
+        {!snapshot ? (
+          <section className="studio-startup" aria-live="polite">
+            <Icon name={workspace.loadError ? 'warning' : 'waveform'} size={40} />
+            <h1>{workspace.loadError ? '暂时无法连接工作台' : '正在连接工作台'}</h1>
+            <p>{workspace.loadError || '正在读取任务与运行环境。'}</p>
+            {workspace.loadError ? <GlassButton className="studio-primary" onClick={() => void workspace.reload()}><Icon name="retry" />重新连接</GlassButton> : null}
+          </section>
+        ) : missingRecord ? (
+          <section className="studio-startup">
+            <Icon name="file" size={40} />
+            <h1>这个记录已不在媒体库中</h1>
+            <p>记录可能已被移除。你可以返回查看其他任务。</p>
+            <GlassButton onClick={() => navigate({ kind: 'library' })}>返回媒体库</GlassButton>
+          </section>
+        ) : route.kind === 'library' ? (
+          <Library workspace={workspace} onOpenTask={openTask} onOpenHistory={openHistory} onNew={() => setImportOpen(true)} />
+        ) : (
+          <Reader key={`${route.kind}:${route.id}`} workspace={readerWorkspace} onBack={() => navigate({ kind: 'library' })} />
+        )}
+      </main>
 
-        {workspace.confirmation ? (
-          <ConfirmDialog
-            busy={workspace.confirming}
-            key="confirmation"
-            onCancel={workspace.dismissConfirmation}
-            onConfirm={() => void workspace.confirmAction()}
-            request={workspace.confirmation}
-          />
-        ) : null}
+      {snapshot ? <footer className="studio-footer"><span>本地工作台 · 媒体保存在运行主机</span><span aria-live="polite">{workspace.activeTaskCount ? `${workspace.activeTaskCount} 个任务正在处理` : '准备就绪'}</span></footer> : null}
 
-        {workspace.isDragging ? (
-          <motion.div
-            animate={{ opacity: 1 }}
-            className="drop-overlay"
-            exit={{ opacity: 0 }}
-            initial={{ opacity: 0 }}
-            transition={quickTransition}
-            key="drop-overlay"
-          >
-            <div className="drop-card glass-float">
-              <span className="drop-icon"><Icon name="upload" size={26} /></span>
-              <h2>松开即可导入</h2>
-              <p>支持音频、视频及常见媒体文件</p>
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-
-      <ToastStack toasts={workspace.toasts} />
-    </main>
+      {importOpen && snapshot ? <ImportSheet workspace={workspace} onClose={() => setImportOpen(false)} /> : null}
+      {workspace.settingsOpen && snapshot ? <Preferences workspace={workspace} appearance={appearance} onClose={() => workspace.setSettingsOpen(false)} /> : null}
+      {systemOpen && snapshot ? <SystemPanel workspace={workspace} onClose={() => setSystemOpen(false)} onPreferences={() => { setSystemOpen(false); workspace.setSettingsOpen(true); }} /> : null}
+      {workspace.confirmation ? <Confirmation workspace={workspace} /> : null}
+      {workspace.isDragging ? <div className="studio-drop" aria-live="polite"><GlassSurface className="studio-drop-card" radius={32}><Icon name="upload" size={38} /><h2>松开，添加到工作台</h2><p>音频与视频都会使用当前任务选项。</p></GlassSurface></div> : null}
+      <Notifications toasts={workspace.toasts} />
+    </div>
   );
 }
 
