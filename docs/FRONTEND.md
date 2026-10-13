@@ -1,6 +1,6 @@
 # Whisper Studio · 光学玻璃工作台
 
-本地分支 `codex/kyant-glass-rewrite` 重新编写了前端组件、样式与交互。
+本地分支 `codex/lens-native-workbench` 接入 Lens 原版材质与弹性手势，并保留单页工作台。
 后端、REST/SSE 协议、任务控制器和持久化配置结构保持原样。
 
 ## 使用方式
@@ -25,37 +25,41 @@
 
 ## 光学实现
 
-`src/renderer/glass/` 将 [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)
-的圆角有符号距离场、法线、圆弧透镜剖面及七谱采样移植为几何位移图与 SVG 滤镜。
-`backdrop-filter: url(#filter)` 的输入是浏览器当前合成的真实 DOM 背景；正文只绘制一次，保持清晰。
-位移图只包含透镜几何，不含截图、复制的文字或预制背景。滚动、任务更新和更换壁纸由浏览器更新取样。
+直接使用 [ruiqichenbiec/design-systems 的 Lens](https://github.com/ruiqichenbiec/design-systems/tree/7a424c93b9be13cf835b91ea67495fec2ec0584e/lens/lab/design-system)
+原版 `createGlassSystem()`、`GlassRenderer`、`JellyController` 和共享 `createLensSurface()`。
+固定来源提交为 `7a424c93b9be13cf835b91ea67495fec2ec0584e`，版本 `1.1.0-showcase.1`；
+运行所需代码和样式直接随项目提供，无 CDN 或新增运行时依赖。旧 SVG 滤镜与独立拖拽实现已移除。
 
-面板降低材质底色的遮挡，增大透镜边缘范围与位移；独立矢量轮廓绘制高光、暗边与反射，
-避免大面板几何图降采样时细高光消失。工作台背景的渐变与轮廓线提供实际折射取样内容。
+全工作台共用一张 WebGL2 画布。原版 shader 使用 Snell 折射、色散、Fresnel 反射、边缘光和焦散；
+拖拽产生的弯曲、压力和能量同时驱动 DOM 形变与玻璃的距离场轮廓。默认采用原版 Thick 材质。
+背景使用 Lens 的曲面构图；本地壁纸可进入同一取样纹理，远程图片须允许 CORS。
+折射采样系统画布和其中已经绘制的玻璃，不自动采集任意 DOM、视频或第三方页面；正文仍是原生 DOM。
 
-光学路径针对 Windows/Linux 上的桌面 Chromium 120+。Firefox/WebKit 采用实体材质。
+Windows/Linux 浏览器由实际 WebGL2 初始化结果决定支持，不按浏览器名称屏蔽 Firefox。
+WebGL2 不可用或上下文丢失时切换 CSS 毛玻璃，恢复后重建光学资源；菜单和对话框采用 CSS 材质，
+避免根画布被它们的原生 DOM 容器遮挡。
 材质默认启用玻璃；旧版自动跟随系统的默认值迁移为玻璃，明确选择的实色和新版跟随系统设置保留。
 顶栏材质按钮可一步切换玻璃与实色。手动选择玻璃时可覆盖系统减少透明度设置；
 跟随系统时遵守该设置。系统更高对比度、强制颜色或用户选择实色时使用实体材质。
 元素上的 `data-glass-mode` 和 `data-glass-fallback` 记录所选路径；它们不表示效果已通过视觉验证。
-来源版本、算法范围与 Apache-2.0 许可见 [第三方说明](third-party/AndroidLiquidGlass-NOTICE.md)。
+来源、MIT 许可和接入补丁见 [Lens 第三方说明](third-party/Lens-NOTICE.md)。
 
-按压与拖拽释放保留弹簧速度，支持打断和反向操作；反馈直接写入控件自身的 transform 与边缘高光。
+按压与拖拽由原版 Jelly 弹簧驱动，支持中途重新抓取与反向操作；反馈直接写入 transform，shader 使用同一物理状态。
 拖拽使用指针捕获；取消、失焦、窗口尺寸变化或页面隐藏时恢复原位。每帧不更新 React 状态，空闲时没有动画循环。
 键盘操作立即响应；减少动态效果时关闭自动位移与形变。
-几何图单张最多 196,608 像素；复用缓存最多 36 项、24 MiB。
+默认关闭自动背景移动和新增交互声音。只维护一个 GPU 上下文，动态组件卸载时释放其手势监听。
 
 ## 开发与验证
 
 沿用项目启动方式：`npm run dev`，生产前端构建为 `npm run build:web`。
-工作台组件集中在 `src/renderer/studio/`，公共光学控件与拖拽逻辑位于 `src/renderer/glass/`。
+工作台组件集中在 `src/renderer/studio/`，React 接入层位于 `src/renderer/glass/`，原版运行代码位于 `src/renderer/vendor/lens/`。
 `workbench.css` 定义同页布局，`ActivityRail.tsx` 管理紧凑任务列表；原有任务控制器与 API 适配层继续使用。
 
-`npm run check` 检查类型。`tests/frontend-optics.test.mjs` 验证透镜数学、谱权重、SVG 图和弹簧；
-`tests/frontend-studio.test.mjs` 验证字幕缺段配对、Unicode 查找、导航和设置保留。
-`tests/frontend-glass-drag.test.mjs` 验证拖拽阻尼连续性与释放速度，共 2 项通过。
-现有队列、传输与对话框测试仍保留。本次工作台改动通过类型检查和生产构建，以及 15 组定向 DOM 验证，
-覆盖同页布局、实时加入队列、导入与结果操作、拖拽回弹和材质切换。
+`npm run check` 检查类型。`node --test tests/frontend-lens.test.mjs` 验证原版弹簧的中断与收敛、
+形变矩阵的面积和边界、共享工厂对 React 节点的所有权与清理，共 3 项通过。
+现有字幕、队列、传输与对话框测试仍保留。本次类型检查、生产构建和定向 DOM 检查通过，
+覆盖单画布初始化、动态挂载、拖拽中断、减少动态效果、配色与材质切换、上下文失效与恢复及 CSS 回退。
+真实指针输入验证标题拖拽，`WEBGL_lose_context` 验证上下文恢复；Escape、指针取消和失焦清除形变与捕获。
 隔离浏览器使用模拟 REST/SSE 数据，不连接实际任务服务；已通过的无关项目没有重复运行。
 
 按本次约束，验证不使用截图、OCR、像素读回或图像识别。光学外观及真实设备上的帧率没有经过视觉或性能测量，不能用数学、DOM 或构建通过替代这些结论。

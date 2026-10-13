@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type DragEvent } from 'react';
 
 import Icon from './components/Icon';
 import { GlassButton, GlassSurface } from './glass';
-import { useGlassCapability } from './glass/capabilities';
+import { setLensRendererState, useGlassCapability } from './glass/capabilities';
+import { useLensStage } from './glass/LensStage';
 import { useAppearance } from './hooks/useAppearance';
 import { useInteractionModality } from './hooks/useInteractionModality';
 import { useWhisperWorkspace } from './hooks/useWhisperWorkspace';
@@ -17,6 +18,8 @@ function App(): React.JSX.Element {
   const workspace = useWhisperWorkspace();
   const appearance = useAppearance();
   const glass = useGlassCapability();
+  const stageRef = useRef<HTMLDivElement>(null);
+  useLensStage(stageRef, { enabled: glass.enabled, appearance: appearance.appearance, wallpaper: workspace.wallpaperUrl, onState: setLensRendererState });
   useInteractionModality();
   const [systemOpen, setSystemOpen] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
@@ -92,7 +95,7 @@ function App(): React.JSX.Element {
 
   const record = workspace.activity.activeHistoryRecord ?? workspace.activity.activeTask;
   const issues = snapshot?.environment.items.filter((item) => !item.ok).length ?? 0;
-  const materialLabel = appearance.material === 'solid' ? '实色' : glass.mode === 'optical' ? '液态玻璃' : '玻璃暂不可用';
+  const materialLabel = glass.mode === 'optical' ? '液态玻璃' : glass.enabled ? '毛玻璃' : '实色';
 
   function caption(title: string, id: string, detail: string): React.JSX.Element {
     return <div className="workbench-caption" data-glass-drag-handle title="按住拖动，松手弹回原位">
@@ -102,18 +105,18 @@ function App(): React.JSX.Element {
     </div>;
   }
 
-  return <div className="studio-root studio-workbench-root" onDragEnter={dragEnter} onDragLeave={dragLeave} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={drop} onDropCapture={(event) => { if (event.dataTransfer.types.includes('Files')) { dragDepth.current = 0; workspace.setIsDragging(false); } }}>
+  return <div ref={stageRef} className="studio-root studio-workbench-root" onDragEnter={dragEnter} onDragLeave={dragLeave} onDragOver={(event) => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={drop} onDropCapture={(event) => { if (event.dataTransfer.types.includes('Files')) { dragDepth.current = 0; workspace.setIsDragging(false); } }}>
     <a className="studio-skip" href="#workbench-result" onClick={(event) => { event.preventDefault(); document.getElementById('workbench-result')?.focus(); }}>跳转到结果</a>
     <div className="studio-landscape workbench-landscape" aria-hidden="true">
       <svg className="workbench-contours" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><path d="M-160 180C220-140 510 630 850 440S1420 0 1770 360" /><path d="M-160 212C220-108 510 662 850 472S1420 32 1770 392" /><path d="M-160 244C220-76 510 694 850 504S1420 64 1770 424" /><path d="M-160 650C300 280 650 1090 970 760S1460 460 1810 850" /></svg>
       {workspace.wallpaperUrl ? <div className="studio-wallpaper" style={{ backgroundImage: `url(${JSON.stringify(workspace.wallpaperUrl)})` }} /> : null}
     </div>
-    <GlassSurface as="header" className="studio-header workbench-header" radius={26} refractionHeight={14} refractionAmount={26}>
+    <GlassSurface as="header" className="studio-header workbench-header" radius={26}>
       <div className="studio-header-content">
         <div className="studio-brand"><span className="studio-brand-mark"><Icon name="waveform" size={24} /></span><span>Whisper <strong>Studio</strong></span></div>
         <div className="workbench-header-context"><span>工作台</span><small>{workspace.activeTaskCount ? `${workspace.activeTaskCount} 个任务处理中` : '随时开始'}</small></div>
         <div className="studio-header-actions">
-          <GlassButton className="workbench-material-control" aria-label="切换界面材质" aria-pressed={glass.mode === 'optical'} title={glass.mode === 'solid' && appearance.material !== 'solid' ? '点击启用玻璃；浏览器支持及系统高对比度限制仍然有效' : '点击切换玻璃与实色'} onClick={() => appearance.setMaterial(glass.mode === 'optical' ? 'solid' : 'glass')}><Icon name="palette" size={17} /><span>{materialLabel}</span></GlassButton>
+          <GlassButton className="workbench-material-control" aria-label="切换界面材质" aria-pressed={glass.enabled} title={glass.enabled ? '点击切换为实色' : '点击启用 Lens 玻璃'} onClick={() => appearance.setMaterial(glass.enabled ? 'solid' : 'glass')}><Icon name="palette" size={17} /><span>{materialLabel}</span></GlassButton>
           <GlassButton className="workbench-status-control" aria-label="系统状态" onClick={() => setSystemOpen(true)} disabled={!snapshot}><span className={`studio-status-dot ${issues ? 'has-issue' : ''}`} /><span>系统状态</span>{issues ? <small>{issues}</small> : null}</GlassButton>
           <GlassButton className="studio-icon-button" aria-label="偏好设置" title="偏好设置" onClick={() => workspace.setSettingsOpen(true)} disabled={!snapshot}><Icon name="settings" /></GlassButton>
         </div>
@@ -123,15 +126,15 @@ function App(): React.JSX.Element {
     <main className="studio-content workbench-main" aria-label="工作台">
       <h1 className="studio-visually-hidden">Whisper Studio 工作台</h1>
       {!snapshot ? <section className="studio-startup" aria-live="polite"><Icon name={workspace.loadError ? 'warning' : 'waveform'} size={40} /><h2>{workspace.loadError ? '暂时无法连接工作台' : '正在连接工作台'}</h2><p>{workspace.loadError || '正在读取任务与运行环境。'}</p>{workspace.loadError ? <GlassButton onClick={() => void workspace.reload()}>重新连接</GlassButton> : null}</section> : <div className="workbench-grid">
-        <GlassSurface className="workbench-pane workbench-input-pane" as="section" radius={30} refractionHeight={22} refractionAmount={34} draggable id="workbench-import" aria-labelledby="workbench-import-heading">
+        <GlassSurface className="workbench-pane workbench-input-pane" as="section" radius={30} draggable id="workbench-import" aria-labelledby="workbench-import-heading">
           {caption('导入媒体', 'workbench-import-heading', '链接 · 本地文件')}
           <ImportSheet workspace={workspace} variant="inline" />
         </GlassSurface>
-        <GlassSurface className="workbench-pane workbench-activity-pane" as="section" radius={30} refractionHeight={22} refractionAmount={34} draggable aria-labelledby="workbench-activity-heading">
+        <GlassSurface className="workbench-pane workbench-activity-pane" as="section" radius={30} draggable aria-labelledby="workbench-activity-heading">
           {caption('任务', 'workbench-activity-heading', `${snapshot.tasks.length} 个任务`)}
           <ActivityRail workspace={workspace} onSelectTask={selectTask} onSelectHistory={selectHistory} />
         </GlassSurface>
-        <GlassSurface className="workbench-pane workbench-result-pane" as="section" radius={30} refractionHeight={22} refractionAmount={34} draggable id="workbench-result" aria-labelledby="workbench-result-heading" tabIndex={-1}>
+        <GlassSurface className="workbench-pane workbench-result-pane" as="section" radius={30} draggable id="workbench-result" aria-labelledby="workbench-result-heading" tabIndex={-1}>
           {caption('结果', 'workbench-result-heading', '转写 · 翻译 · 导出')}
           <div className="workbench-reading-scroll">{record ? <Reader key={`${workspace.activity.view}:${record.id}`} workspace={workspace} embedded /> : <div className="workbench-empty"><Icon name="waveform" size={38} /><h3>让声音变成文字</h3><p>从左侧添加媒体，或选择一个任务。<br />转写、译文、字幕与日志会显示在这里。</p><GlassButton onClick={focusImport}><Icon name="upload" size={17} />添加媒体</GlassButton></div>}</div>
         </GlassSurface>

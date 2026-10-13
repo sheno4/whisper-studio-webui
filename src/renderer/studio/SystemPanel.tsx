@@ -48,7 +48,7 @@ export function SystemPanel({ workspace, onClose, onPreferences }: SystemPanelPr
   return (
     <div className="studio-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="studio-modal studio-system" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={panelRef} tabIndex={-1}>
-        <GlassSurface className="studio-modal-heading" radius={0} refractionAmount={14}>
+        <GlassSurface className="studio-modal-heading" radius={0}>
           <div><p className="studio-eyebrow">运行状态</p><h2 id={titleId}>一切都在这里</h2><p>最近检查：{formatDateTime(environment.checkedAt)}</p></div>
           <button ref={closeRef} aria-label="关闭系统状态" className="studio-icon-button studio-button" onClick={onClose} type="button"><Icon name="close" /></button>
         </GlassSurface>
@@ -77,7 +77,7 @@ export function SystemPanel({ workspace, onClose, onPreferences }: SystemPanelPr
             {error || workspace.loadError ? <p className="studio-error" role="alert">{normalizeUiText(error || workspace.loadError)}</p> : null}
           </section>
         </div>
-        <GlassSurface className="studio-modal-footer" radius={0} refractionAmount={14}><p>模型在后台准备，完成后等待中的任务会自动继续。</p><GlassButton onClick={onPreferences}>打开偏好设置</GlassButton></GlassSurface>
+        <GlassSurface className="studio-modal-footer" radius={0}><p>模型在后台准备，完成后等待中的任务会自动继续。</p><GlassButton onClick={onPreferences}>打开偏好设置</GlassButton></GlassSurface>
       </div>
     </div>
   );

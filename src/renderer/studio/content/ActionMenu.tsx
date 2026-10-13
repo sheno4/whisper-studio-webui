@@ -111,6 +111,6 @@ export default function ActionMenu({ label, ariaLabel, className = '', children 
       const index = items.indexOf(document.activeElement as HTMLButtonElement);
       const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
       items[next]?.focus({ preventScroll: true });
-    }}>{children}</GlassSurface>, document.body) : null}
+    }}>{children}</GlassSurface>, document.querySelector('.studio-root') ?? document.body) : null}
   </>;
 }

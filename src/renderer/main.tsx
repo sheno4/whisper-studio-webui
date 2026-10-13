@@ -5,6 +5,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { initializeAppearance } from './hooks/useAppearance';
 import './web-api';
+import './styles/lens.css';
 import './styles/glass.css';
 import './studio/studio.css';
 import './studio/content.css';
