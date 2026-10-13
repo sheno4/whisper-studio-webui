@@ -4,11 +4,11 @@ import {GlassSound,bindControlSounds} from './sound.js';
 import {tokens,resolveMaterial} from './tokens.js';
 import {bindKeyboardFocus} from './focus.js';
 
-export function createGlassSystem(stage,{canvas,material='thick',scene='aurora',artwork,motion=false,elasticity=tokens.motion.elasticity,audio={},onFallback=()=>{},onState}={}){
+export function createGlassSystem(stage,{canvas,optical=true,material='thick',scene='aurora',artwork,motion=false,elasticity=tokens.motion.elasticity,audio={},onFallback=()=>{},onState}={}){
   if(!stage||!stage.querySelector)throw new TypeError('A stage element is required');
-  const ownsCanvas=!canvas;canvas ||= stage.ownerDocument.createElement('canvas');canvas.setAttribute('aria-hidden','true');canvas.classList.add('lg-canvas');if(ownsCanvas)stage.prepend(canvas);stage.classList.add('lg-stage');stage.dataset.scene=scene;
+  const ownsCanvas=optical&&!canvas;if(optical){canvas ||= stage.ownerDocument.createElement('canvas');canvas.setAttribute('aria-hidden','true');canvas.classList.add('lg-canvas');if(ownsCanvas)stage.prepend(canvas);}stage.classList.add('lg-stage');stage.dataset.scene=scene;
   const initialMaterial=resolveMaterial(material);stage.style.setProperty('--lg-fallback-blur',`${4+initialMaterial.blur*24}px`);
-  let renderer;try{renderer=new GlassRenderer(canvas,stage,{...initialMaterial,scene,artwork,motion,onState});}catch(error){stage.classList.add('fallback');onFallback(error);onState?.('lost');}
+  let renderer;if(optical)try{renderer=new GlassRenderer(canvas,stage,{...initialMaterial,scene,artwork,motion,onState});}catch(error){stage.classList.add('fallback');onFallback(error);onState?.('lost');}
   const jelly=new JellyController(stage,renderer,{intensity:elasticity}),sound=new GlassSound(audio),unbind=bindControlSounds(stage,sound),unbindFocus=bindKeyboardFocus(stage),abort=new AbortController(),observers=[],media=matchMedia('(prefers-reduced-motion: reduce)');renderer?.setMotionSource(jelly);
   const signal=abort.signal;media.addEventListener('change',event=>{jelly.reduced=event.matches;if(renderer){renderer.reducedMotion=event.matches;renderer.invalidate();}},{signal});
   const mount=(root=stage)=>{
@@ -40,10 +40,25 @@ export function createGlassSystem(stage,{canvas,material='thick',scene='aurora',
       input.addEventListener('lg:sync',sync,{signal});const observer=new ResizeObserver(sync);observer.observe(input);observers.push(observer);sync();
     }
     for(const el of all('[data-lg-segments]')){
-      const indicator=el.querySelector('.lg-segment-indicator'),bar=el.querySelector('.lg-segment-bar');if(jelly.bodies.has(indicator))continue;
-      const buttons=()=>[...bar.querySelectorAll('button')].filter(button=>!button.disabled);
-      jelly.register(indicator,{source:bar,mode:'segment',segments:buttons,onCommit:button=>el.dispatchEvent(new CustomEvent('lg:set',{detail:{value:button.dataset.value,emit:true}}))});
-      let placed=false;const sync=()=>{const button=bar.querySelector('[aria-selected=true],[aria-current]');if(!button)return;indicator.style.width=`${button.offsetWidth}px`;jelly.target(indicator,button.offsetLeft,0,{snap:!placed});if(button.offsetWidth)placed=true;};el.addEventListener('lg:sync',sync,{signal});sync();
+      const indicator=el.querySelector('.lg-segment-indicator'),bar=el.querySelector('.lg-segment-bar');if(!indicator||!bar||jelly.bodies.has(indicator))continue;
+      const buttons=()=>[...bar.querySelectorAll('button')].filter(button=>!button.matches(':disabled')&&button.getAttribute('aria-disabled')!=='true');
+      const body=jelly.register(indicator,{source:bar,mode:'segment',segments:buttons,onCommit:button=>el.dispatchEvent(new CustomEvent('lg:set',{detail:{value:button.dataset.value,emit:true}}))});
+      let placed=false;const sync=event=>{
+        const button=bar.querySelector('[aria-selected=true],[aria-current]');if(!button)return;
+        const detail=event?.detail||{};
+        // Counts and translated labels update in place. Their lg:sync must not
+        // wrest the held indicator from the pointer or replace the body.
+        if(body.held&&!detail.cancel)return;
+        if(detail.cancel&&jelly.gesture?.body===body)jelly.cancel(true);
+        indicator.style.width=`${button.offsetWidth}px`;body.segmentRestX=button.offsetLeft;
+        if(detail.snap){for(const key of ['press','stretch','bendX','bendY']){body[key].target=0;body[key].snap();}body.optical={bend:[0,0],pressure:0,energy:0};}
+        jelly.target(indicator,button.offsetLeft,0,{snap:Boolean(detail.snap)||!placed});if(button.offsetWidth)placed=true;
+      };
+      el.addEventListener('lg:sync',sync,{signal:body.abort.signal});
+      el.addEventListener('lg:unmount',()=>jelly.unregister(indicator),{signal:body.abort.signal});
+      bar.addEventListener('lg:gesture',event=>{if(event.detail.phase==='cancel')sync();},{signal:body.abort.signal});
+      const observer=new ResizeObserver(()=>sync());observer.observe(bar);
+      body.abort.signal.addEventListener('abort',()=>observer.disconnect(),{once:true});sync();
     }
     renderer?.invalidate(300);return api;
   };

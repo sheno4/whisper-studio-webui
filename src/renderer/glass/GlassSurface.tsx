@@ -9,13 +9,11 @@ type MaterialProps = {
 };
 export type GlassSurfaceProps = Omit<HTMLAttributes<HTMLElement>, 'draggable'> & MaterialProps & {
   as?: 'div' | 'section' | 'nav' | 'header' | 'aside' | 'footer';
-  draggable?: boolean;
-  dragHandle?: string;
 };
 export type GlassButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & MaterialProps;
 
 /** React owns semantic DOM; Lens owns the shared material and spring body. */
-function useLensSurface(ref: RefObject<HTMLElement | null>, kind: 'panel' | 'small', motion: 'none' | 'press' | 'tether', className: string, dragHandle?: string) {
+function useLensSurface(ref: RefObject<HTMLElement | null>, kind: 'panel' | 'small', motion: 'none' | 'press', className: string) {
   const capability = useGlassCapability();
   const [overlay, setOverlay] = useState(false);
   useLayoutEffect(() => {
@@ -25,13 +23,13 @@ function useLensSurface(ref: RefObject<HTMLElement | null>, kind: 'panel' | 'sma
     // material so opaque containers cannot hide their canvas-rendered surface.
     const domOverlay = Boolean(element.closest('[role="dialog"], [role="menu"], .studio-drop'));
     setOverlay(domOverlay);
-    const surface = createLensSurface({ element, kind, motion, dragHandle });
+    const surface = createLensSurface({ element, kind, motion });
     if (domOverlay) {
       element.dataset.lgDomOverlay = 'true';
       element.removeAttribute('data-glass');
     }
     return () => surface.destroy();
-  }, [ref, kind, motion, className, dragHandle]);
+  }, [ref, kind, motion, className]);
   return {
     ...capability,
     mode: overlay && capability.enabled ? 'frosted' : capability.mode,
@@ -41,25 +39,23 @@ function useLensSurface(ref: RefObject<HTMLElement | null>, kind: 'panel' | 'sma
   } as const;
 }
 
-export const GlassSurface = forwardRef<HTMLElement, GlassSurfaceProps>(function GlassSurface({ as = 'div', className = '', children, radius, interactive = false, draggable = false, dragHandle = '[data-glass-drag-handle]', tone = 'regular', style, ...props }, forwardedRef) {
+export const GlassSurface = forwardRef<HTMLElement, GlassSurfaceProps>(function GlassSurface({ as = 'div', className = '', children, radius, interactive = false, tone = 'regular', style, ...props }, forwardedRef) {
   const ref = useRef<HTMLElement>(null);
   useImperativeHandle(forwardedRef, () => ref.current!, []);
-  const motion = draggable ? 'tether' : interactive ? 'press' : 'none';
-  const glass = useLensSurface(ref, 'panel', motion, className, draggable ? dragHandle : undefined);
+  const motion = interactive ? 'press' : 'none';
+  const glass = useLensSurface(ref, 'panel', motion, className);
   return createElement(as, {
     ...props, ref,
     className: `lg-surface glass-surface ${className}`.trim(),
     'data-glass': glass.overlay ? undefined : 'panel',
     'data-lg-lens': 'panel',
     'data-lg-drag': motion === 'none' ? undefined : motion,
-    'data-lg-drag-handle': draggable ? dragHandle : undefined,
     'data-lg-dom-overlay': glass.overlay || undefined,
     'data-glass-mode': glass.mode,
     'data-glass-source': glass.mode === 'optical' ? glass.source : undefined,
     'data-glass-fallback': glass.mode !== 'optical' ? glass.reason : undefined,
     'data-glass-tone': tone,
     'data-glass-interactive': interactive || undefined,
-    'data-glass-draggable': draggable || undefined,
     style: { ...(radius === undefined ? {} : { '--glass-radius': `${radius}px` }), ...style } as CSSProperties
   }, <span className="glass-surface__content">{children}</span>);
 });

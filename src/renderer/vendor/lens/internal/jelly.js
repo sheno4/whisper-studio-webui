@@ -47,7 +47,12 @@ export class JellyController {
   }
 
   grab(body, e) {
-    if(e.button!==0 || !e.isPrimary || this.gesture || body.source.disabled || body.source.getAttribute('aria-disabled')==='true')return;
+    if(e.button!==0 || !e.isPrimary || this.gesture || body.source.disabled || body.source.matches(':disabled') || body.source.getAttribute('aria-disabled')==='true')return;
+    if(body.mode==='segment'){
+      const button=e.target.closest('button');
+      if(button&&(button.matches(':disabled')||button.getAttribute('aria-disabled')==='true'))return;
+      if(!body.segments?.().length||body.source.closest('[aria-disabled=true]'))return;
+    }
     // A panel never steals a slider, menu, button, or nested draggable's gesture.
     if(['tether','press','free'].includes(body.mode)) {
       const interactive=e.target.closest('button,input,textarea,select,a,[contenteditable]:not([contenteditable=false]),[role=button],[role=slider],[role=textbox],[data-optical-drag]');
@@ -60,7 +65,7 @@ export class JellyController {
     this.gesture={body,boundary,capture,id:e.pointerId,startX:e.clientX,startY:e.clientY,baseX:body.x.value,restX:body.x.target,baseY:body.y.value,
       rect:{left:r.left-sr.left-body.x.value,top:r.top-sr.top-body.y.value,right:r.right-sr.left-body.x.value,bottom:r.bottom-sr.top-body.y.value},moved:false};
     body.held=true;body.press.target=1;
-    if(['tether','press','free'].includes(body.mode)){body.x.target=body.x.value;body.y.target=body.y.value;body.x.velocity=body.y.velocity=0;}
+    if(['tether','press','free','segment'].includes(body.mode)){body.x.target=body.x.value;body.y.target=body.y.value;body.x.velocity=body.y.velocity=0;}
     body.element.dataset.held='true';
     if(!['range','press'].includes(body.mode)) {e.preventDefault();capture.setPointerCapture(e.pointerId);}
     if(capture.matches('button,[tabindex]'))capture.focus({preventScroll:true});
@@ -81,7 +86,7 @@ export class JellyController {
       b.x.target=clamp(g.baseX+dx,0,this.toggleTravel(b.source));b.y.target=0;
     } else if(b.mode==='segment') {
       const box=b.source.getBoundingClientRect();
-      b.x.target=clamp(e.clientX-box.left-b.element.offsetWidth/2,3,b.source.clientWidth-b.element.offsetWidth-3);
+      b.x.target=clamp(e.clientX-box.left-b.element.offsetWidth/2,3,Math.max(3,b.source.clientWidth-b.element.offsetWidth-3));
       b.y.target=clamp(dy*.25,-10,10);
     } else {
       const bound=boundDrag(g.baseX+dx,g.baseY+dy,g.rect,{width:g.boundary.clientWidth,height:g.boundary.clientHeight},22);
@@ -111,9 +116,10 @@ export class JellyController {
     if(b.mode==='segment'){
       if(g.moved&&!cancelled){
         const center=b.x.target+b.element.offsetWidth/2;
-        const selected=b.segments().reduce((a,c)=>Math.abs(c.offsetLeft+c.offsetWidth/2-center)<Math.abs(a.offsetLeft+a.offsetWidth/2-center)?c:a);
-        b.onCommit?.(selected);
-      }else b.x.target=g.baseX;
+        const options=b.source.getAttribute('aria-disabled')==='true'?[]:b.segments();
+        const selected=options.reduce((a,c)=>!a||Math.abs(c.offsetLeft+c.offsetWidth/2-center)<Math.abs(a.offsetLeft+a.offsetWidth/2-center)?c:a,null);
+        if(selected)b.onCommit?.(selected);else b.x.target=b.segmentRestX??g.restX;
+      }else b.x.target=b.segmentRestX??g.restX;
       b.y.target=0;
     }
     if(cancelled||this.reduced){

@@ -35,14 +35,10 @@
 .workbench-caption {
   display: flex; align-items: center; gap: 10px; padding: 14px 20px;
   min-height: 52px; flex-shrink: 0; border-bottom: 1px solid var(--line);
-  border-radius: 29px 29px 0 0; cursor: grab; touch-action: none; user-select: none;
+  border-radius: 29px 29px 0 0;
 }
-.workbench-caption:active { cursor: grabbing; }
 .workbench-caption h2 { font-size: 14px; font-weight: 650; white-space: nowrap; }
 .workbench-caption-detail { font-size: 11px; color: var(--muted); }
-.workbench-drag-hint { margin-left: auto; font-size: 10px; color: var(--muted); white-space: nowrap; }
-.workbench-grip { display: flex; gap: 3px; height: 13px; opacity: .56; }
-.workbench-grip span { width: 2px; background: repeating-linear-gradient(to bottom, currentColor 0 2px, transparent 2px 4px); }
 .workbench-reading-scroll { overflow: auto; min-height: 0; flex: 1; margin: 0 8px 8px; border-radius: 0 0 24px 24px; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .workbench-result-pane .studio-reader { padding: 20px 22px; }
 .workbench-result-pane .studio-reading-tools { position: sticky; top: 0; z-index: 3; --glass-tint: color-mix(in srgb, var(--surface) 27%, transparent); }

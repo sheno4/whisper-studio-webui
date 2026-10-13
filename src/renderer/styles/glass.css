@@ -41,9 +41,7 @@
   transform: var(--jelly-base, translate(0, 0)) var(--jelly-matrix, matrix(1, 0, 0, 1, 0, 0));
   transform-origin: center;
 }
-.glass-surface[data-glass-draggable="true"] [data-glass-drag-handle] { cursor: grab; touch-action: none; user-select: none; }
 .glass-surface[data-held="true"] { z-index: 45; }
-.glass-surface[data-held="true"] [data-glass-drag-handle] { cursor: grabbing; }
 .glass-button {
   display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
   min-height: 42px; padding: .625rem 1rem;

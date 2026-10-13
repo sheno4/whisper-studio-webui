@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ExportFileKind, TaskOutputFiles, TaskRecord } from '../../shared/types';
 import Icon from '../components/Icon';
 import { GlassButton, GlassSurface } from '../glass';
+import GlassSegmentedControl from '../glass/GlassSegmentedControl';
 import type { WhisperWorkspaceController } from '../hooks/useWhisperWorkspace';
 import { describeTaskLanguage, describeTaskMode, formatDuration, formatLongDateTime, getReadableName, isTaskActive, normalizeUiText, statusLabels, statusTones } from '../utils';
 import { TaskProgress } from './ActivityRail';
@@ -98,7 +99,7 @@ export default function Reader({ workspace, onBack, embedded = false }: ReaderPr
 
       {task ? <>
         <GlassSurface className="studio-reading-tools" as="nav" radius={24} aria-label="阅读工具">
-          <div className="studio-reading-modes" role="group" aria-label="阅读内容">{readingModes.map((option) => <button type="button" key={option.value} className={mode === option.value ? 'is-selected' : ''} aria-pressed={mode === option.value} onClick={() => setMode(option.value)}>{option.label}{option.value === 'logs' ? <small>{task.logs.length}</small> : null}</button>)}</div>
+          <GlassSegmentedControl className="studio-reading-modes" label="阅读内容" value={mode} onChange={(value) => setMode(value as ReadingMode)} options={readingModes.map((option) => ({ ...option, badge: option.value === 'logs' ? task.logs.length : undefined }))} />
           <div className="studio-reading-actions"><button disabled={!textToCopy.trim()} className="studio-tool-button" onClick={() => void workspace.copyText(textToCopy, mode === 'logs' ? '处理日志' : mode === 'translation' ? '中文译文' : mode === 'bilingual' ? '双语文本' : '原文')} type="button"><Icon name="copy" />复制</button><ActionMenu label={<><Icon name="download" />导出</>} ariaLabel="导出文件">{[false, true].map((translated) => <div className="studio-export-group" role="group" aria-label={translated ? '导出译文' : '导出原文'} key={String(translated)}><strong>{translated ? '中文译文' : '转写原文'}</strong><div>{exportOptions.filter((option) => option.translated === translated).map((option) => <button disabled={!task.outputFiles[option.kind]} key={option.kind} onClick={() => void workspace.exportTaskFile(task.id, option.kind)} type="button" role="menuitem">{option.label}</button>)}</div></div>)}</ActionMenu></div>
         </GlassSurface>
         <div className="studio-reading-preferences">

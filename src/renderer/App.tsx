@@ -98,10 +98,8 @@ function App(): React.JSX.Element {
   const materialLabel = glass.mode === 'optical' ? '液态玻璃' : glass.enabled ? '毛玻璃' : '实色';
 
   function caption(title: string, id: string, detail: string): React.JSX.Element {
-    return <div className="workbench-caption" data-glass-drag-handle title="按住拖动，松手弹回原位">
-      <span className="workbench-grip" aria-hidden="true"><span /><span /></span>
+    return <div className="workbench-caption">
       <h2 id={id}>{title}</h2><span className="workbench-caption-detail">{detail}</span>
-      <span className="workbench-drag-hint" aria-hidden="true">拖动试试</span>
     </div>;
   }
 
@@ -126,21 +124,21 @@ function App(): React.JSX.Element {
     <main className="studio-content workbench-main" aria-label="工作台">
       <h1 className="studio-visually-hidden">Whisper Studio 工作台</h1>
       {!snapshot ? <section className="studio-startup" aria-live="polite"><Icon name={workspace.loadError ? 'warning' : 'waveform'} size={40} /><h2>{workspace.loadError ? '暂时无法连接工作台' : '正在连接工作台'}</h2><p>{workspace.loadError || '正在读取任务与运行环境。'}</p>{workspace.loadError ? <GlassButton onClick={() => void workspace.reload()}>重新连接</GlassButton> : null}</section> : <div className="workbench-grid">
-        <GlassSurface className="workbench-pane workbench-input-pane" as="section" radius={30} draggable id="workbench-import" aria-labelledby="workbench-import-heading">
+        <GlassSurface className="workbench-pane workbench-input-pane" as="section" radius={30} id="workbench-import" aria-labelledby="workbench-import-heading">
           {caption('导入媒体', 'workbench-import-heading', '链接 · 本地文件')}
           <ImportSheet workspace={workspace} variant="inline" />
         </GlassSurface>
-        <GlassSurface className="workbench-pane workbench-activity-pane" as="section" radius={30} draggable aria-labelledby="workbench-activity-heading">
+        <GlassSurface className="workbench-pane workbench-activity-pane" as="section" radius={30} aria-labelledby="workbench-activity-heading">
           {caption('任务', 'workbench-activity-heading', `${snapshot.tasks.length} 个任务`)}
           <ActivityRail workspace={workspace} onSelectTask={selectTask} onSelectHistory={selectHistory} />
         </GlassSurface>
-        <GlassSurface className="workbench-pane workbench-result-pane" as="section" radius={30} draggable id="workbench-result" aria-labelledby="workbench-result-heading" tabIndex={-1}>
+        <GlassSurface className="workbench-pane workbench-result-pane" as="section" radius={30} id="workbench-result" aria-labelledby="workbench-result-heading" tabIndex={-1}>
           {caption('结果', 'workbench-result-heading', '转写 · 翻译 · 导出')}
           <div className="workbench-reading-scroll">{record ? <Reader key={`${workspace.activity.view}:${record.id}`} workspace={workspace} embedded /> : <div className="workbench-empty"><Icon name="waveform" size={38} /><h3>让声音变成文字</h3><p>从左侧添加媒体，或选择一个任务。<br />转写、译文、字幕与日志会显示在这里。</p><GlassButton onClick={focusImport}><Icon name="upload" size={17} />添加媒体</GlassButton></div>}</div>
         </GlassSurface>
       </div>}
     </main>
-    <footer className="studio-footer workbench-footer"><span>{snapshot ? `${snapshot.settings.transcriptionEngine} · ${snapshot.settings.whisperModel}` : '本地工作台'}<span className="workbench-footer-separator">·</span>媒体保存在运行主机</span><span>按住面板标题可拖动<span className="workbench-footer-separator">·</span>Alt + N 添加媒体</span></footer>
+    <footer className="studio-footer workbench-footer"><span>{snapshot ? `${snapshot.settings.transcriptionEngine} · ${snapshot.settings.whisperModel}` : '本地工作台'}<span className="workbench-footer-separator">·</span>媒体保存在运行主机</span><span>拖动玻璃选中块切换选项<span className="workbench-footer-separator">·</span>Alt + N 添加媒体</span></footer>
     <nav className="workbench-mobile-jumps" aria-label="工作台定位"><a href="#workbench-import" onClick={(event) => { event.preventDefault(); focusImport(); }}>导入</a><a href="#workbench-activity-heading">任务</a><a href="#workbench-result" onClick={(event) => { event.preventDefault(); document.getElementById('workbench-result')?.scrollIntoView({ block: 'start' }); }}>结果</a></nav>
     {workspace.settingsOpen && snapshot ? <Preferences workspace={workspace} appearance={appearance} onClose={() => workspace.setSettingsOpen(false)} /> : null}
     {systemOpen && snapshot ? <SystemPanel workspace={workspace} onClose={() => setSystemOpen(false)} onPreferences={() => { setSystemOpen(false); workspace.setSettingsOpen(true); }} /> : null}

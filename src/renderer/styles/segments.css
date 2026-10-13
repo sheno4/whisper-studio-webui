@@ -1,0 +1,49 @@
+/* Lens' draggable glass selection layer stays under native option labels. */
+.glass-segmented-control { min-width: 0; width: 100%; }
+.glass-segmented-control .lg-tabs { width: 100%; min-width: 0; }
+.glass-segmented-control .lg-segment-bar {
+  display: flex; position: relative; isolation: isolate;
+  padding: 4px; gap: 0; border: 1px solid var(--line); border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-soft) 36%, transparent);
+  touch-action: none; user-select: none;
+}
+.glass-segmented-control .lg-segment-bar .lg-segment-option {
+  position: relative; z-index: 1; flex: 1; min-width: 0; min-height: 44px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 10px; border: 0; border-radius: 999px;
+  background: transparent; box-shadow: none; color: var(--muted);
+  font-size: 13px; line-height: 1.25; white-space: nowrap;
+}
+.glass-segmented-control .lg-segment-option[aria-selected="true"] { color: var(--ink); font-weight: 650; opacity: 1; cursor: grab; }
+.glass-segmented-control .lg-segment-option:not([aria-selected="true"]):not(:disabled) { opacity: .8; }
+.glass-segmented-control .lg-segment-option:disabled { opacity: .4; cursor: default; }
+.glass-segmented-control .lg-segment-badge { font-size: 10px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--muted); }
+.glass-segmented-control .lg-segment-indicator {
+  position: absolute; z-index: 0; top: 4px; left: 0; height: calc(100% - 8px);
+  border-radius: 999px; pointer-events: none;
+  border: 1px solid light-dark(rgb(255 255 255 / .62), rgb(209 230 255 / .35));
+}
+.glass-segmented-control:has(.lg-segment-indicator[data-held="true"]) .lg-segment-option { cursor: grabbing; }
+.glass-segmented-control .lg-segment-indicator[data-jelly] {
+  transform: var(--jelly-matrix, matrix(1, 0, 0, 1, 0, 0)); transition: none;
+}
+.glass-segmented-control[data-glass-mode="solid"] .lg-segment-indicator {
+  background: var(--surface-raised); backdrop-filter: none;
+  box-shadow: 0 2px 8px rgb(10 30 60 / .1);
+}
+.studio-import-source.glass-segmented-control { display: block; padding: 0; background: transparent; border-radius: 999px; }
+.studio-import-inline .studio-import-source.glass-segmented-control { padding: 0; }
+.workbench-source-control { flex: 1; }
+.workbench-activity-source { gap: 8px; }
+.studio-reading-modes.glass-segmented-control { flex: 1; width: auto; }
+.studio-reading-modes .lg-segment-option { padding-inline: 10px; }
+@media (max-width: 850px) { .glass-segmented-control .lg-segment-option { min-height: 44px; } }
+@media (max-width: 560px) { .studio-reading-modes.glass-segmented-control { width: 100%; flex-basis: 100%; } }
+@media (prefers-reduced-motion: reduce) { .glass-segmented-control .lg-segment-indicator { transition: none; } }
+@media (prefers-contrast: more) { .glass-segmented-control .lg-segment-indicator { background: var(--surface-raised); backdrop-filter: none; border-color: var(--ink); } }
+@media (forced-colors: active) {
+  .glass-segmented-control .lg-segment-bar { background: Canvas; border-color: ButtonText; }
+  .glass-segmented-control .lg-segment-indicator { background: Canvas; border-color: Highlight; box-shadow: none; backdrop-filter: none; }
+  .glass-segmented-control .lg-segment-option { color: ButtonText; }
+  .glass-segmented-control .lg-segment-option[aria-selected="true"] { color: Highlight; }
+}

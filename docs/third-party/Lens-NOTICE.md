@@ -9,9 +9,9 @@ The full [MIT license](../../src/renderer/vendor/lens/LICENSE) and
 [integration changes](../../src/renderer/vendor/lens/UPSTREAM.md) accompany the copied source.
 
 The application uses the original WebGL2 renderer, optical shaders, material presets,
-Jelly physics, shared surface factory, focus support and CSS fallback. React owns
+Jelly physics, shared surface factory, segmented control, focus support and CSS fallback. React owns
 semantic controls and business callbacks. Small documented integration patches add
-existing-host binding, title-only drag handles, dynamic cleanup and reduced-motion behavior.
+existing-host binding, controlled segmented choices, dynamic cleanup and reduced-motion behavior.
 
 The original renderer samples its scene artwork and previously composited lenses;
 it does not capture arbitrary DOM, video, screenshots or external pages.

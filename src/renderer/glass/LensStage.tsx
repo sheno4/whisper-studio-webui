@@ -68,14 +68,13 @@ export function useLensStage(ref: RefObject<HTMLElement | null>, options: LensSt
   useEffect(() => {
     const stage = ref.current;
     if (!stage) return;
-    if (!options.enabled) { latest.current.onState?.('fallback'); return; }
     let destroyed = false;
     let mountFrame = 0;
     let lastState: LensRendererState | undefined;
     const publish = (): void => {
       if (destroyed) return;
       const canvas = stage.querySelector<HTMLCanvasElement>(':scope > .lg-canvas');
-      const state: LensRendererState = stage.classList.contains('webgl-ready') && canvas?.dataset.gpuState === 'active'
+      const state: LensRendererState = !options.enabled ? 'fallback' : stage.classList.contains('webgl-ready') && canvas?.dataset.gpuState === 'active'
         ? 'ready' : canvas?.dataset.gpuState === 'idle' ? 'pending' : stage.classList.contains('fallback') ? 'fallback' : 'pending';
       stage.dataset.lensState = state;
       if (state !== lastState) { lastState = state; latest.current.onState?.(state); }
@@ -85,10 +84,10 @@ export function useLensStage(ref: RefObject<HTMLElement | null>, options: LensSt
       artwork.current.dark = prefersDark(latest.current.appearance);
       system.current?.setScene(scene());
     };
-    stage.dataset.lensState = 'pending'; latest.current.onState?.('pending');
+    stage.dataset.lensState = options.enabled ? 'pending' : 'fallback'; latest.current.onState?.(options.enabled ? 'pending' : 'fallback');
     artwork.current.dark = prefersDark(latest.current.appearance);
     const instance = createGlassSystem(stage, {
-      material: 'thick', scene: scene(), motion: false,
+      optical: options.enabled, material: 'thick', scene: scene(), motion: false,
       artwork: (context, info) => drawArtwork(context, info, artwork.current),
       audio: { enabled: false, storage: null },
       onFallback: publish, onState: publish
@@ -102,7 +101,7 @@ export function useLensStage(ref: RefObject<HTMLElement | null>, options: LensSt
         mountFrame = 0; if (!destroyed) instance.mount();
       });
     });
-    mounting.observe(stage, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-glass', 'data-lg-drag', 'data-lg-drag-handle'] });
+    mounting.observe(stage, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-glass', 'data-lg-drag', 'data-lg-drag-handle', 'data-lg-segments'] });
     const stateObserver = new MutationObserver(publish);
     stateObserver.observe(stage, { attributes: true, attributeFilter: ['class'] });
     const canvas = stage.querySelector<HTMLCanvasElement>(':scope > .lg-canvas');

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { HistoryRecord, TaskRecord, TaskStatus } from '../../shared/types';
 import Icon from '../components/Icon';
+import GlassSegmentedControl from '../glass/GlassSegmentedControl';
 import type { WhisperWorkspaceController } from '../hooks/useWhisperWorkspace';
 import { describeTaskMode, formatDateTime, formatProgressPercent, getReadableName, isTaskActive, normalizeUiText, statusLabels, statusTones } from '../utils';
 import ActionMenu from './content/ActionMenu';
@@ -116,8 +117,7 @@ export default function ActivityRail({ workspace, onSelectTask, onSelectHistory 
   return <section className="workbench-activity" aria-labelledby="workbench-activity-title">
     <header className="workbench-activity-heading"><h2 id="workbench-activity-title">任务</h2><span>{workspace.activeTaskCount ? `${workspace.activeTaskCount} 项正在处理` : '可随时加入新任务'}</span></header>
     <div className="workbench-activity-source" role="group" aria-label="记录来源">
-      <button type="button" aria-pressed={!history} onClick={() => setSource('queue')}>当前任务<span>{workspace.snapshot?.tasks.length ?? 0}</span></button>
-      <button type="button" aria-pressed={history} onClick={() => setSource('history')}>历史记录<span>{workspace.snapshot?.history.length ?? 0}</span></button>
+      <GlassSegmentedControl className="workbench-source-control" label="记录来源" value={history ? 'history' : 'queue'} onChange={(value) => setSource(value as 'queue' | 'history')} options={[{ value: 'queue', label: '当前任务', badge: workspace.snapshot?.tasks.length ?? 0 }, { value: 'history', label: '历史记录', badge: workspace.snapshot?.history.length ?? 0 }]} />
       {history && records.length ? <button className="workbench-history-clear" aria-label="清空历史记录" type="button" onClick={workspace.requestClearHistory}><Icon name="trash" size={16} /></button> : null}
     </div>
     <div className="workbench-activity-filter">

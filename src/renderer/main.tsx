@@ -10,6 +10,7 @@ import './styles/glass.css';
 import './studio/studio.css';
 import './studio/content.css';
 import './studio/workbench.css';
+import './styles/segments.css';
 
 function escapeHtml(value: string): string {
   return value
