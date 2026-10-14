@@ -29,7 +29,7 @@ export class JellyController {
     this.unregister(element);
     const body = { element,source,mode,maxTravel,onCommit,segments,onPosition,
       x:new Spring(), y:new Spring(), press:new Spring(), stretch:new Spring(), bendX:new Spring(), bendY:new Spring(),
-      angle:0, held:false, freeX:0, freeY:0, optical:{bend:[0,0],pressure:0,energy:0},abort:new AbortController() };
+      angle:0, held:false, freeX:0, freeY:0, previousTransform:element.style.transform, optical:{bend:[0,0],pressure:0,energy:0},abort:new AbortController() };
     this.bodies.set(element, body);
     element.dataset.jelly = mode; element.style.setProperty('--jelly-matrix','matrix(1,0,0,1,0,0)');
     source.addEventListener('pointerdown', e => this.grab(body,e), { signal:body.abort.signal });
@@ -43,6 +43,7 @@ export class JellyController {
     body.abort.abort();this.bodies.delete(element);
     delete element.dataset.jelly;delete element.dataset.held;
     element.classList.remove('jelly-moving');element.style.removeProperty('--jelly-matrix');
+    if(element.style.transform===body.lastTransform)element.style.transform=body.previousTransform;
     if(this.blockClick?.source===body.source)this.blockClick=null;
   }
 
@@ -64,6 +65,7 @@ export class JellyController {
     const capture=body.mode==='segment'?(e.target.closest('button')||body.source):body.source;
     this.gesture={body,boundary,capture,id:e.pointerId,startX:e.clientX,startY:e.clientY,baseX:body.x.value,restX:body.x.target,baseY:body.y.value,
       rect:{left:r.left-sr.left-body.x.value,top:r.top-sr.top-body.y.value,right:r.right-sr.left-body.x.value,bottom:r.bottom-sr.top-body.y.value},moved:false};
+    // A fresh gesture interrupts the shape at its current presentation.
     body.held=true;body.press.target=1;
     if(['tether','press','free','segment'].includes(body.mode)){body.x.target=body.x.value;body.y.target=body.y.value;body.x.velocity=body.y.velocity=0;}
     body.element.dataset.held='true';
@@ -138,6 +140,13 @@ export class JellyController {
     if(b.mode==='free'){b.freeX=x;b.freeY=y;}
     if(snap){b.x.snap();b.y.snap();}this.wake();
   }
+  /** Record layout once, then let the shared spring move the local material.
+   * The retired compositor's unused shape arrays are never computed per frame. */
+  transitionSegment(element,x,width,{snap=false}={}) {
+    const b=this.bodies.get(element);if(!b)return;
+    b.segmentWidth=width;b.segmentRestX=x;
+    this.target(element,x,0,{snap:snap||this.reduced});
+  }
   pulse(element,amount=.45) {
     if(this.reduced)return;
     const b=this.bodies.get(element);if(!b)return;
@@ -186,9 +195,10 @@ export class JellyController {
         const pose=togglePose(x,this.toggleTravel(b.source),b.element.offsetWidth,pressure*amount,b.stretch.value);
         m=[pose.scaleX,0,0,pose.scaleY];x=pose.x;y=0;
       }
-      b.element.style.setProperty('--jelly-matrix',`matrix(${m.map(v=>v.toFixed(5)).join(',')},${x.toFixed(3)},${y.toFixed(3)})`);
-      b.optical={bend:b.mode==='toggle'?[0,0]:[b.bendX.value,b.bendY.value],pressure,energy:Math.abs(b.stretch.value)+Math.hypot(b.bendX.value,b.bendY.value)*.015};
+      const transform=`matrix(${m.map(v=>v.toFixed(5)).join(',')},${x.toFixed(3)},${y.toFixed(3)})`;
+      if(b.lastTransform!==transform){b.element.style.transform=transform;b.lastTransform=transform;}
       const active=['x','y','press','stretch','bendX','bendY'].some(k=>b[k].moving);
+      b.optical={bend:b.mode==='toggle'?[0,0]:[b.bendX.value,b.bendY.value],pressure,energy:Math.abs(b.stretch.value)+Math.hypot(b.bendX.value,b.bendY.value)*.015};
       b.element.classList.toggle('jelly-moving',active||b.held);
       moving ||= active;
     }

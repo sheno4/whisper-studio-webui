@@ -1,9 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
-export type LensRendererState = 'pending' | 'ready' | 'fallback';
 export type GlassCapability = { mode: 'optical' | 'frosted' | 'solid'; reason: string; enabled: boolean };
 const subscribers = new Set<() => void>();
-let rendererState: LensRendererState = 'pending';
 let snapshot: GlassCapability = { mode: 'solid', reason: 'not-mounted', enabled: false };
 let stopObserving: (() => void) | undefined;
 
@@ -12,10 +10,11 @@ function measureCapability(): GlassCapability {
   if (document.documentElement.dataset.material === 'solid') return { mode: 'solid', reason: 'user-preference', enabled: false };
   if (document.documentElement.dataset.material !== 'glass' && window.matchMedia('(prefers-reduced-transparency: reduce)').matches) return { mode: 'solid', reason: 'reduced-transparency', enabled: false };
   if (window.matchMedia('(forced-colors: active)').matches || window.matchMedia('(prefers-contrast: more)').matches) return { mode: 'solid', reason: 'increased-contrast', enabled: false };
-  // The actual Lens WebGL2 context decides support, including Firefox. A CSS
-  // syntax check or a browser name cannot establish renderer availability.
-  if (rendererState === 'ready') return { mode: 'optical', reason: '', enabled: true };
-  return { mode: 'frosted', reason: rendererState === 'pending' ? 'initializing' : 'webgl-unavailable', enabled: true };
+  // rdev documents full SVG displacement in Chromium and partial effects in
+  // Firefox/Safari. Their CSS fallback must not be reported as full optics.
+  const chromium=/Chrome\/|Chromium\/|Edg\//.test(navigator.userAgent)&&!navigator.userAgent.includes('Firefox/');
+  const backdrop=CSS.supports('backdrop-filter','blur(1px)');
+  return chromium&&backdrop ? {mode:'optical',reason:'rdev-svg',enabled:true} : {mode:'frosted',reason:'svg-displacement-unavailable',enabled:true};
 }
 
 function update(): void {
@@ -23,11 +22,6 @@ function update(): void {
   if (snapshot.mode === next.mode && snapshot.reason === next.reason && snapshot.enabled === next.enabled) return;
   snapshot = next;
   subscribers.forEach((listener) => listener());
-}
-
-export function setLensRendererState(state: LensRendererState): void {
-  rendererState = state;
-  update();
 }
 
 function subscribe(listener: () => void): () => void {

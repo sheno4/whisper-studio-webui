@@ -6,6 +6,8 @@ import type { DownloadBehavior, TranscriptionLanguage, VideoQualityOption } from
 import Icon from '../components/Icon';
 import { GlassButton, GlassSurface } from '../glass';
 import GlassSegmentedControl from '../glass/GlassSegmentedControl';
+import GlassSwitch from '../glass/GlassSwitch';
+import { useScrollEdge } from '../glass/useScrollEdge';
 import { useDialogInteraction } from '../hooks/useDialogInteraction';
 import type { WhisperWorkspaceController } from '../hooks/useWhisperWorkspace';
 import { videoQualityLabels } from '../utils';
@@ -36,6 +38,8 @@ export default function ImportSheet({ workspace, onClose = noClose, variant = 'd
   const [importing, setImporting] = useState(false);
   const importingRef = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLFormElement>(null);
+  useScrollEdge(scrollRef, { barSelector: '.studio-import-source' });
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const closeRef = useRef(onClose);
@@ -99,7 +103,7 @@ export default function ImportSheet({ workspace, onClose = noClose, variant = 'd
     <div className={inline ? 'studio-import-inline' : 'studio-modal-backdrop studio-import-backdrop'} onPointerDown={inline ? undefined : (event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="studio-import-sheet" ref={panelRef} role={inline ? 'region' : 'dialog'} aria-modal={inline ? undefined : true} aria-labelledby="studio-import-title" tabIndex={inline ? undefined : -1}>
         {inline ? <header className="studio-import-header"><h2 id="studio-import-title">添加媒体</h2><span>链接与文件直接加入队列</span></header> : <GlassSurface className="studio-import-header" as="header" radius={26} tone="strong"><div><p className="studio-eyebrow">添加媒体</p><h2 id="studio-import-title">新建任务</h2></div><GlassButton onClick={onClose} aria-label="关闭新建任务"><Icon name="close" /></GlassButton></GlassSurface>}
-        <form className="studio-import-form" onSubmit={(event) => { event.preventDefault(); if (source === 'links') void submitLinks(); else void chooseFiles(); }} aria-busy={busy}>
+        <form className="studio-import-form" ref={scrollRef} onSubmit={(event) => { event.preventDefault(); if (source === 'links') void submitLinks(); else void chooseFiles(); }} aria-busy={busy}>
           <fieldset className="studio-import-controls" disabled={busy}>
           <input ref={fileRef} type="file" accept="audio/*,video/*,.mkv,.flac,.m4a,.webm" multiple hidden aria-hidden="true" tabIndex={-1} onChange={(event) => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; void importDroppedFiles(files); }} />
           <GlassSegmentedControl className="studio-import-source" label="媒体来源" value={source} disabled={busy} onChange={(value) => { if (value === 'files' && composer.downloadBehavior === 'downloadOnly') workspace.setDownloadBehavior('transcribe'); setSource(value as 'links' | 'files'); }} options={[{ value: 'links', label: '在线链接' }, { value: 'files', label: '本地文件' }]} />
@@ -111,7 +115,7 @@ export default function ImportSheet({ workspace, onClose = noClose, variant = 'd
             {source === 'links' && downloading ? <label className="studio-field"><span>下载规格</span><select value={composer.videoQuality} onChange={(event) => workspace.setVideoQuality(event.target.value as VideoQualityOption)}>{(['best', '1080p', '720p', '480p', 'audio'] as const).map((quality) => <option value={quality} key={quality}>{videoQualityLabels[quality]}</option>)}</select><small>保存视频或仅下载音频。</small></label> : null}
           </div>
           {(source === 'files' || translating) ? <>
-          <label className="studio-import-translation"><span><Icon name="translate" /><span><strong>同时翻译成中文</strong><small>{activeService ? `转写后使用 ${activeService.name}。` : '转写后生成中文译文。'}</small></span></span><input type="checkbox" checked={composer.translateNext} onChange={(event) => workspace.setTranslateNext(event.target.checked)} /></label>
+          <label className="studio-import-translation"><span><Icon name="translate" /><span><strong>同时翻译成中文</strong><small>{activeService ? `转写后使用 ${activeService.name}。` : '转写后生成中文译文。'}</small></span></span><GlassSwitch label="同时翻译成中文" checked={composer.translateNext} disabled={busy} onChange={workspace.setTranslateNext} /></label>
           {composer.translateNext ? <div className="studio-import-service">
             {services.length ? <label className="studio-field"><span>翻译服务</span><select aria-label="新任务翻译服务" value={activeServiceId} onChange={(event) => void workspace.changeTranslationService(event.target.value)}>
               {!services.some((service) => service.id === activeServiceId) ? <option value={activeServiceId} disabled>{activeService ? `${activeService.name}（已停用）` : '请选择翻译服务'}</option> : null}

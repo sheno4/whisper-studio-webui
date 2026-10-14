@@ -4,6 +4,7 @@ import type { SaveSettingsPayload, SettingsData, TranscriptionEngine } from '../
 import Icon from '../components/Icon';
 import { GlassButton, GlassSurface } from '../glass';
 import { useGlassCapability } from '../glass/capabilities';
+import { useScrollEdge } from '../glass/useScrollEdge';
 import type { useAppearance, Appearance } from '../hooks/useAppearance';
 import { useDialogInteraction } from '../hooks/useDialogInteraction';
 import { isKeyboardInteraction } from '../hooks/useInteractionModality';
@@ -48,6 +49,7 @@ function PreferencesDialog({ workspace, onClose, appearance, settings }: Prefere
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  useScrollEdge(scrollRef);
   const firstTabRef = useRef<HTMLButtonElement>(null);
   const baseline = useRef(JSON.stringify(draft));
   const savingLock = useRef(false);

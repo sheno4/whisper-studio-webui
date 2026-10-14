@@ -2,8 +2,9 @@ import { useEffect, useRef, useState, type DragEvent } from 'react';
 
 import Icon from './components/Icon';
 import { GlassButton, GlassSurface } from './glass';
-import { setLensRendererState, useGlassCapability } from './glass/capabilities';
-import { useLensStage } from './glass/LensStage';
+import { useGlassCapability } from './glass/capabilities';
+import { useGlassMotionStage } from './glass/LensStage';
+import { useScrollEdge } from './glass/useScrollEdge';
 import { useAppearance } from './hooks/useAppearance';
 import { useInteractionModality } from './hooks/useInteractionModality';
 import { useWhisperWorkspace } from './hooks/useWhisperWorkspace';
@@ -19,13 +20,15 @@ function App(): React.JSX.Element {
   const appearance = useAppearance();
   const glass = useGlassCapability();
   const stageRef = useRef<HTMLDivElement>(null);
-  useLensStage(stageRef, { enabled: glass.enabled, appearance: appearance.appearance, wallpaper: workspace.wallpaperUrl, onState: setLensRendererState });
+  const readingScrollRef = useRef<HTMLDivElement>(null);
+  useGlassMotionStage(stageRef);
   useInteractionModality();
   const [systemOpen, setSystemOpen] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[] | null>(null);
   const consumingDrop = useRef(false);
   const dragDepth = useRef(0);
   const snapshot = workspace.snapshot;
+  useScrollEdge(readingScrollRef, { enabled: Boolean(snapshot), barSelector: '.studio-reading-tools' });
 
   function focusImport(): void {
     const input = document.getElementById('studio-link-input') ?? document.querySelector<HTMLElement>('#workbench-import button:not(:disabled)');
@@ -114,9 +117,9 @@ function App(): React.JSX.Element {
         <div className="studio-brand"><span className="studio-brand-mark"><Icon name="waveform" size={24} /></span><span>Whisper <strong>Studio</strong></span></div>
         <div className="workbench-header-context"><span>工作台</span><small>{workspace.activeTaskCount ? `${workspace.activeTaskCount} 个任务处理中` : '随时开始'}</small></div>
         <div className="studio-header-actions">
-          <GlassButton className="workbench-material-control" aria-label="切换界面材质" aria-pressed={glass.enabled} title={glass.enabled ? '点击切换为实色' : '点击启用 Lens 玻璃'} onClick={() => appearance.setMaterial(glass.enabled ? 'solid' : 'glass')}><Icon name="palette" size={17} /><span>{materialLabel}</span></GlassButton>
-          <GlassButton className="workbench-status-control" aria-label="系统状态" onClick={() => setSystemOpen(true)} disabled={!snapshot}><span className={`studio-status-dot ${issues ? 'has-issue' : ''}`} /><span>系统状态</span>{issues ? <small>{issues}</small> : null}</GlassButton>
-          <GlassButton className="studio-icon-button" aria-label="偏好设置" title="偏好设置" onClick={() => workspace.setSettingsOpen(true)} disabled={!snapshot}><Icon name="settings" /></GlassButton>
+          <GlassButton data-glass-fusion="header-actions" className="workbench-material-control" aria-label="切换界面材质" aria-pressed={glass.enabled} title={glass.enabled ? '点击切换为实色' : '点击启用 Lens 玻璃'} onClick={() => appearance.setMaterial(glass.enabled ? 'solid' : 'glass')}><Icon name="palette" size={17} /><span>{materialLabel}</span></GlassButton>
+          <GlassButton data-glass-fusion="header-actions" className="workbench-status-control" aria-label="系统状态" onClick={() => setSystemOpen(true)} disabled={!snapshot}><span className={`studio-status-dot ${issues ? 'has-issue' : ''}`} /><span>系统状态</span>{issues ? <small>{issues}</small> : null}</GlassButton>
+          <GlassButton data-glass-fusion="header-actions" className="studio-icon-button" aria-label="偏好设置" title="偏好设置" onClick={() => workspace.setSettingsOpen(true)} disabled={!snapshot}><Icon name="settings" /></GlassButton>
         </div>
       </div>
     </GlassSurface>
@@ -134,7 +137,7 @@ function App(): React.JSX.Element {
         </GlassSurface>
         <GlassSurface className="workbench-pane workbench-result-pane" as="section" radius={30} id="workbench-result" aria-labelledby="workbench-result-heading" tabIndex={-1}>
           {caption('结果', 'workbench-result-heading', '转写 · 翻译 · 导出')}
-          <div className="workbench-reading-scroll">{record ? <Reader key={`${workspace.activity.view}:${record.id}`} workspace={workspace} embedded /> : <div className="workbench-empty"><Icon name="waveform" size={38} /><h3>让声音变成文字</h3><p>从左侧添加媒体，或选择一个任务。<br />转写、译文、字幕与日志会显示在这里。</p><GlassButton onClick={focusImport}><Icon name="upload" size={17} />添加媒体</GlassButton></div>}</div>
+          <div className="workbench-reading-scroll" ref={readingScrollRef}>{record ? <Reader key={`${workspace.activity.view}:${record.id}`} workspace={workspace} embedded /> : <div className="workbench-empty"><Icon name="waveform" size={38} /><h3>让声音变成文字</h3><p>从左侧添加媒体，或选择一个任务。<br />转写、译文、字幕与日志会显示在这里。</p><GlassButton onClick={focusImport}><Icon name="upload" size={17} />添加媒体</GlassButton></div>}</div>
         </GlassSurface>
       </div>}
     </main>

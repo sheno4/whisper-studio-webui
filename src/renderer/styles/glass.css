@@ -1,17 +1,20 @@
 /* Original Lens materials and Jelly matrices; React retains semantic controls. */
 .glass-surface {
   position: relative;
+  isolation: isolate;
   border: 1px solid light-dark(rgb(255 255 255 / .45), rgb(229 239 255 / .2));
   border-radius: var(--glass-radius, 24px);
   color: var(--glass-foreground, var(--ink, CanvasText));
 }
 .glass-surface__content { display: contents; }
+.lg-segment-indicator, .lg-switch-thumb, .lg-switch-track { isolation: isolate; }
 .studio-workbench-root { position: relative; isolation: isolate; }
 .studio-workbench-root.lg-stage {
   position: relative; isolation: isolate; overflow: visible;
   border-radius: 0; background: transparent; color: var(--ink); font: inherit;
   --lg-color-text: var(--ink); --lg-color-muted: var(--muted);
   --lg-color-focus: var(--accent); --lg-surface-solid: var(--surface);
+  --lg-fallback-blur: 8px;
   --lg-surface-fallback: color-mix(in srgb, var(--surface) 38%, transparent);
 }
 .studio-workbench-root > .lg-canvas { z-index: -1; }

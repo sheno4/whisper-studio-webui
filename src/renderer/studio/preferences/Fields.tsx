@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import GlassSwitch from '../../glass/GlassSwitch';
 
 export function PreferenceGroup({ title, description, children }: { title: string; description?: string; children: ReactNode }): React.JSX.Element {
   return <section className="prefs-group"><header><h4>{title}</h4>{description ? <p>{description}</p> : null}</header><div className="prefs-group-content">{children}</div></section>;
@@ -9,5 +10,5 @@ export function PreferenceField({ label, hint, children, wide = false }: { label
 }
 
 export function PreferenceToggle({ label, hint, checked, onChange, disabled = false }: { label: string; hint?: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }): React.JSX.Element {
-  return <label className="prefs-toggle"><span><strong>{label}</strong>{hint ? <small>{hint}</small> : null}</span><input aria-label={label} checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} role="switch" type="checkbox" /></label>;
+  return <label className="prefs-toggle"><span><strong>{label}</strong>{hint ? <small>{hint}</small> : null}</span><GlassSwitch label={label} checked={checked} disabled={disabled} onChange={onChange} /></label>;
 }

@@ -1,4 +1,6 @@
-import { useLayoutEffect, useRef, type CSSProperties } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import {createPortal} from 'react-dom';
+import {RdevMaterial} from './RdevMaterial';
 import { createSegmentedControl, type SegmentedHandle } from '../vendor/lens/segmented.js';
 import { useGlassCapability } from './capabilities';
 
@@ -24,6 +26,7 @@ export type GlassSegmentedControlProps<Value extends string = string> = {
 export function GlassSegmentedControl<Value extends string>({ className = '', style, ...props }: GlassSegmentedControlProps<Value>) {
   const host = useRef<HTMLDivElement>(null);
   const control = useRef<SegmentedHandle | undefined>(undefined);
+  const [materialHost,setMaterialHost]=useState<HTMLElement|null>(null);
   const latest = useRef(props); latest.current = props;
   const glass = useGlassCapability();
   const optionKeys = JSON.stringify(props.options.map(option => option.value));
@@ -38,6 +41,7 @@ export function GlassSegmentedControl<Value extends string>({ className = '', st
     });
     control.current = instance;
     host.current.append(instance.element);
+    setMaterialHost(instance.element.querySelector('.lg-segment-indicator'));
     return () => {
       control.current = undefined;
       instance.destroy(); instance.element.remove();
@@ -53,7 +57,7 @@ export function GlassSegmentedControl<Value extends string>({ className = '', st
     if (control.current?.value !== props.value) control.current?.setValue(props.value, {force: true, snap: true, cancel: true});
   }, [props.value, optionKeys]);
 
-  return <div ref={host} className={`glass-segmented-control ${className}`.trim()} style={style} data-glass-segment-host data-glass-mode={glass.mode} data-glass-source={glass.mode === 'optical' ? 'lens-scene' : undefined} />;
+  return <div ref={host} className={`glass-segmented-control ${className}`.trim()} style={style} data-glass-segment-host data-glass-mode={glass.mode} data-glass-source={glass.mode === 'optical' ? 'rdev-liquid-glass-react' : undefined}>{materialHost&&glass.mode==='optical'?createPortal(<RdevMaterial owner="segment"/>,materialHost):null}</div>;
 }
 
 export default GlassSegmentedControl;

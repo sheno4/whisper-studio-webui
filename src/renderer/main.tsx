@@ -11,6 +11,9 @@ import './studio/studio.css';
 import './studio/content.css';
 import './studio/workbench.css';
 import './styles/segments.css';
+import './styles/scroll-edge.css';
+import './styles/switches.css';
+import './styles/rdev.css';
 
 function escapeHtml(value: string): string {
   return value

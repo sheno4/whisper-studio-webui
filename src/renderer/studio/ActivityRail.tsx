@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { HistoryRecord, TaskRecord, TaskStatus } from '../../shared/types';
 import Icon from '../components/Icon';
 import GlassSegmentedControl from '../glass/GlassSegmentedControl';
+import { useScrollEdge } from '../glass/useScrollEdge';
 import type { WhisperWorkspaceController } from '../hooks/useWhisperWorkspace';
 import { describeTaskMode, formatDateTime, formatProgressPercent, getReadableName, isTaskActive, normalizeUiText, statusLabels, statusTones } from '../utils';
 import ActionMenu from './content/ActionMenu';
@@ -81,6 +82,8 @@ function ActivityRow({ record, task, selected, pinned, workspace, onSelect }: { 
 
 /** Queue and history remain beside the importer and result; selection never navigates. */
 export default function ActivityRail({ workspace, onSelectTask, onSelectHistory }: ActivityRailProps): React.JSX.Element {
+  const scrollRef = useRef<HTMLElement>(null);
+  useScrollEdge(scrollRef, { barSelector: '.workbench-activity-source' });
   const [preferences, setPreferences] = useState(() => {
     const saved = readPreferences();
     return { ...saved, page: saved.source === workspace.activity.view ? saved.page : 1, source: workspace.activity.view };
@@ -114,7 +117,7 @@ export default function ActivityRail({ workspace, onSelectTask, onSelectHistory 
   useEffect(() => { if (page > pageCount) setPreferences((current) => ({ ...current, page: pageCount })); }, [page, pageCount]);
   const resetFilters = (): void => setPreferences((current) => ({ ...current, query: '', filter: 'all', page: 1 }));
 
-  return <section className="workbench-activity" aria-labelledby="workbench-activity-title">
+  return <section className="workbench-activity" ref={scrollRef} aria-labelledby="workbench-activity-title">
     <header className="workbench-activity-heading"><h2 id="workbench-activity-title">任务</h2><span>{workspace.activeTaskCount ? `${workspace.activeTaskCount} 项正在处理` : '可随时加入新任务'}</span></header>
     <div className="workbench-activity-source" role="group" aria-label="记录来源">
       <GlassSegmentedControl className="workbench-source-control" label="记录来源" value={history ? 'history' : 'queue'} onChange={(value) => setSource(value as 'queue' | 'history')} options={[{ value: 'queue', label: '当前任务', badge: workspace.snapshot?.tasks.length ?? 0 }, { value: 'history', label: '历史记录', badge: workspace.snapshot?.history.length ?? 0 }]} />
