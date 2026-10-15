@@ -20,7 +20,6 @@ export function GlassSwitch({ className = '', style, ...props }: GlassSwitchProp
   const [materialHost,setMaterialHost]=useState<HTMLElement|null>(null);
   const latest = useRef(props); latest.current = props;
   const [revision, reconcile] = useState(0);
-  const [overlay, setOverlay] = useState(false);
   const glass = useGlassCapability();
 
   useLayoutEffect(() => {
@@ -34,13 +33,6 @@ export function GlassSwitch({ className = '', style, ...props }: GlassSwitchProp
     } });
     control.current = instance; root.append(instance.element);
     setMaterialHost(instance.element.querySelector('.lg-switch-thumb'));
-    const domOverlay = Boolean(root.closest('[role="dialog"], [role="menu"]'));
-    setOverlay(domOverlay);
-    if (domOverlay) {
-      instance.element.dataset.lgDomOverlay = 'true';
-      instance.element.querySelector('.lg-switch-track')?.removeAttribute('data-glass');
-      // Keep data-glass=thumb: the shared runtime locates its spring by this key.
-    }
     return () => { control.current = undefined; instance.destroy(); instance.element.remove(); };
   }, []);
 
@@ -49,7 +41,7 @@ export function GlassSwitch({ className = '', style, ...props }: GlassSwitchProp
     if (control.current && control.current.value !== props.checked) control.current.setValue(props.checked, { force: true, snap: true, cancel: true });
   }, [props.checked, revision]);
 
-  const mode = overlay && glass.enabled ? 'frosted' : glass.mode;
+  const mode = glass.mode;
   return <span ref={host} className={`glass-switch ${className}`.trim()} style={style} data-glass-switch-host data-glass-mode={mode} data-glass-source={mode === 'optical' ? 'rdev-liquid-glass-react' : undefined}>{materialHost&&mode==='optical'?createPortal(<RdevMaterial owner="switch"/>,materialHost):null}</span>;
 }
 

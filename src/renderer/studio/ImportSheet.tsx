@@ -4,7 +4,7 @@ import { TRANSCRIPTION_LANGUAGE_OPTIONS } from '../../shared/constants';
 import { extractLinksFromText } from '../../shared/link-parser';
 import type { DownloadBehavior, TranscriptionLanguage, VideoQualityOption } from '../../shared/types';
 import Icon from '../components/Icon';
-import { GlassButton, GlassSurface } from '../glass';
+import { GlassButton, GlassSelect, GlassSurface } from '../glass';
 import GlassSegmentedControl from '../glass/GlassSegmentedControl';
 import GlassSwitch from '../glass/GlassSwitch';
 import { useScrollEdge } from '../glass/useScrollEdge';
@@ -111,16 +111,13 @@ export default function ImportSheet({ workspace, onClose = noClose, variant = 'd
 
           {source === 'links' ? inline ? <div className="studio-field studio-import-processing"><span>处理方式</span><GlassSegmentedControl label="处理方式" value={composer.downloadBehavior} disabled={busy} onChange={(value) => workspace.setDownloadBehavior(value as DownloadBehavior)} options={[{ value: 'transcribe', label: '生成文字' }, { value: 'downloadThenTranscribe', label: '保存并转写' }, { value: 'downloadOnly', label: '仅下载' }]} /></div> : <fieldset className="studio-import-mode"><legend>你想做什么？</legend><div>{([{ value: 'transcribe', title: '生成文字', hint: '识别语音，生成文本与字幕', icon: 'waveform' }, { value: 'downloadThenTranscribe', title: '保存并转写', hint: '保留媒体，同时生成文字', icon: 'download' }, { value: 'downloadOnly', title: '只保存媒体', hint: '下载视频或音频文件', icon: 'file' }] as const).map((option) => <label key={option.value} className={composer.downloadBehavior === option.value ? 'is-selected' : ''}><input type="radio" name="processing-mode" value={option.value} checked={composer.downloadBehavior === option.value} onChange={() => workspace.setDownloadBehavior(option.value as DownloadBehavior)} /><Icon name={option.icon} size={22} /><strong>{option.title}</strong><small>{option.hint}</small></label>)}</div></fieldset> : null}
           <div className="studio-import-options">
-            {(source === 'files' || translating) ? <label className="studio-field"><span>音频语言</span><select value={composer.transcriptionLanguage} onChange={(event) => workspace.setTranscriptionLanguage(event.target.value as TranscriptionLanguage)}>{TRANSCRIPTION_LANGUAGE_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select><small>混合语言建议自动检测。</small></label> : null}
-            {source === 'links' && downloading ? <label className="studio-field"><span>下载规格</span><select value={composer.videoQuality} onChange={(event) => workspace.setVideoQuality(event.target.value as VideoQualityOption)}>{(['best', '1080p', '720p', '480p', 'audio'] as const).map((quality) => <option value={quality} key={quality}>{videoQualityLabels[quality]}</option>)}</select><small>保存视频或仅下载音频。</small></label> : null}
+            {(source === 'files' || translating) ? <label className="studio-field"><span>音频语言</span><GlassSelect label="音频语言" disabled={busy} value={composer.transcriptionLanguage} onChange={(value) => workspace.setTranscriptionLanguage(value as TranscriptionLanguage)} options={TRANSCRIPTION_LANGUAGE_OPTIONS} /><small>混合语言建议自动检测。</small></label> : null}
+            {source === 'links' && downloading ? <label className="studio-field"><span>下载规格</span><GlassSelect label="下载规格" disabled={busy} value={composer.videoQuality} onChange={(value) => workspace.setVideoQuality(value as VideoQualityOption)} options={(['best', '1080p', '720p', '480p', 'audio'] as const).map((quality) => ({ value: quality, label: videoQualityLabels[quality] }))} /><small>保存视频或仅下载音频。</small></label> : null}
           </div>
           {(source === 'files' || translating) ? <>
           <label className="studio-import-translation"><span><Icon name="translate" /><span><strong>同时翻译成中文</strong><small>{activeService ? `转写后使用 ${activeService.name}。` : '转写后生成中文译文。'}</small></span></span><GlassSwitch label="同时翻译成中文" checked={composer.translateNext} disabled={busy} onChange={workspace.setTranslateNext} /></label>
           {composer.translateNext ? <div className="studio-import-service">
-            {services.length ? <label className="studio-field"><span>翻译服务</span><select aria-label="新任务翻译服务" value={activeServiceId} onChange={(event) => void workspace.changeTranslationService(event.target.value)}>
-              {!services.some((service) => service.id === activeServiceId) ? <option value={activeServiceId} disabled>{activeService ? `${activeService.name}（已停用）` : '请选择翻译服务'}</option> : null}
-              {services.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.model}</option>)}
-            </select><small>{switchingService ? '正在切换服务，完成后即可添加任务。' : '服务切换立即生效，新任务使用所选服务。'}</small></label> : <p>还没有可用的翻译服务。</p>}
+            {services.length ? <label className="studio-field"><span>翻译服务</span><GlassSelect label="新任务翻译服务" disabled={busy} value={activeServiceId} onChange={(value) => void workspace.changeTranslationService(value)} options={[...(!services.some((service) => service.id === activeServiceId) ? [{ value: activeServiceId, disabled: true, label: activeService ? `${activeService.name}（已停用）` : '请选择翻译服务' }] : []), ...services.map((service) => ({ value: service.id, label: `${service.name} · ${service.model}` }))]} /><small>{switchingService ? '正在切换服务，完成后即可添加任务。' : '服务切换立即生效，新任务使用所选服务。'}</small></label> : <p>还没有可用的翻译服务。</p>}
             <button className="studio-text-button" onClick={() => workspace.setSettingsOpen(true)} type="button">配置翻译服务<Icon name="external" size={15} /></button>
           </div> : null}
           </> : null}

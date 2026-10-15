@@ -14,6 +14,7 @@ import './styles/segments.css';
 import './styles/scroll-edge.css';
 import './styles/switches.css';
 import './styles/rdev.css';
+import './styles/select.css';
 
 function escapeHtml(value: string): string {
   return value

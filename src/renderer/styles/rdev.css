@@ -1,15 +1,24 @@
 /* rdev's original React material is local to compact chrome. Layout and native
    foreground never enter its component subtree or optical filter. */
 .rdev-material { position:absolute;inset:0;z-index:-1;display:block;pointer-events:none;border-radius:inherit;overflow:visible;contain:layout style; }
-.rdev-material[data-liquid-glass-active='false'] { background:color-mix(in srgb,var(--surface) 55%,transparent);backdrop-filter:blur(6px) saturate(1.2); }
+.rdev-material[data-liquid-glass-active='false'] { background:color-mix(in srgb,var(--surface) 55%,transparent);backdrop-filter:none; }
 .rdev-material .rdev-liquid-glass { pointer-events:none; }
 .rdev-material .glass { width:100%;height:100%;box-sizing:border-box; }
+.rdev-material .rdev-liquid-glass,.rdev-material .glass { transition:none!important; }
+.rdev-material .glass__warp { border-radius:inherit; }
 .rdev-material .glass > div { display:none; }
 .rdev-material > .bg-black { display:none; }
 .lg-stage .glass-surface[data-glass-mode='optical'] { background:transparent;backdrop-filter:none; }
+/* A panel's frost is a painted sibling behind its controls. The panel itself
+   has no Backdrop Root trigger, so nested live lenses can sample the scene and
+   preceding siblings all the way to the document backdrop. */
+.glass-surface[data-glass-background-layer='true'] { background:transparent;backdrop-filter:none; }
+.glass-surface__frost { position:absolute;inset:0;z-index:-1;pointer-events:none;border-radius:inherit;background:var(--glass-tint,color-mix(in srgb,var(--surface) 55%,transparent));backdrop-filter:blur(var(--lg-fallback-blur,8px)) saturate(1.3); }
+.rdev-live-glint { position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:.35; }
 .glass-segmented-control .lg-segment-indicator { background:color-mix(in srgb,var(--surface-raised) 36%,transparent); }
-.glass-switch[data-glass-mode='optical'] .lg-switch-track { background:color-mix(in srgb,var(--muted) 26%,var(--surface)); }
-.glass-switch[data-glass-mode='optical'] .lg-switch[aria-checked='true'] .lg-switch-track { background:color-mix(in srgb,var(--success,#3b9a70) 86%,var(--surface)); }
+.glass-segmented-control[data-glass-mode='optical'] .lg-segment-indicator { background:transparent;backdrop-filter:none; }
+.glass-switch[data-glass-mode='optical'] .lg-switch-track { background:color-mix(in srgb,var(--muted) 22%,transparent); }
+.glass-switch[data-glass-mode='optical'] .lg-switch[aria-checked='true'] .lg-switch-track { background:color-mix(in srgb,var(--success,#3b9a70) 66%,transparent); }
 .glass-switch[data-glass-mode='optical'] .lg-switch-thumb { background:transparent; }
 .rdev-material::after { content:'';position:absolute;inset:0;border-radius:inherit;border:1px solid light-dark(rgb(255 255 255/.65),rgb(240 250 255/.3));background:radial-gradient(ellipse at 30% 0,rgb(255 255 255/.2),transparent 65%);opacity:.5;transition:opacity 160ms ease-out; }
 [data-held='true'] > .rdev-material::after { opacity:1; }

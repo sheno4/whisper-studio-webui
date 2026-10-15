@@ -20,6 +20,7 @@
     "start": "node scripts/launch.mjs"
   },
   "dependencies": {
+    "@base-ui/react": "^1.9.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "framer-motion": "^13.2.0",

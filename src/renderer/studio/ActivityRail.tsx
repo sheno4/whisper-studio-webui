@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { HistoryRecord, TaskRecord, TaskStatus } from '../../shared/types';
 import Icon from '../components/Icon';
 import GlassSegmentedControl from '../glass/GlassSegmentedControl';
+import GlassSelect from '../glass/GlassSelect';
 import { useScrollEdge } from '../glass/useScrollEdge';
 import type { WhisperWorkspaceController } from '../hooks/useWhisperWorkspace';
 import { describeTaskMode, formatDateTime, formatProgressPercent, getReadableName, isTaskActive, normalizeUiText, statusLabels, statusTones } from '../utils';
@@ -125,7 +126,7 @@ export default function ActivityRail({ workspace, onSelectTask, onSelectHistory 
     </div>
     <div className="workbench-activity-filter">
       <label><span className="studio-visually-hidden">搜索任务</span><input type="search" placeholder="搜索任务" value={query} onChange={(event) => setPreferences((current) => ({ ...current, query: event.target.value, page: 1 }))} /></label>
-      <label><span className="studio-visually-hidden">任务状态筛选</span><select value={filter} onChange={(event) => setPreferences((current) => ({ ...current, filter: event.target.value as TaskFilter, page: 1 }))}>{filterOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+      <label><span className="studio-visually-hidden">任务状态筛选</span><GlassSelect label="任务状态筛选" value={filter} onChange={(value) => setPreferences((current) => ({ ...current, filter: value as TaskFilter, page: 1 }))} options={filterOptions} /></label>
     </div>
     {pinned ? <div className="workbench-activity-pin-note"><span>当前查看的任务固定显示</span>{query || filter !== 'all' ? <button type="button" onClick={resetFilters}>查看全部</button> : null}</div> : null}
     {shown.length ? <ul className="workbench-task-list" aria-label={`${history ? '历史记录' : '当前任务'}列表`}>
