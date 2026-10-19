@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type { ExportFileKind, TaskOutputFiles, TaskRecord } from '../../shared/types';
 import Icon from '../components/Icon';
-import { GlassButton, GlassSurface } from '../glass';
+import { GlassButton } from '../glass';
 import GlassSegmentedControl from '../glass/GlassSegmentedControl';
 import GlassSwitch from '../glass/GlassSwitch';
+import { useContentTransition } from '../lens/useContentTransition';
 import type { WhisperWorkspaceController } from '../hooks/useWhisperWorkspace';
 import { describeTaskLanguage, describeTaskMode, formatDuration, formatLongDateTime, getReadableName, isTaskActive, normalizeUiText, statusLabels, statusTones } from '../utils';
 import { TaskProgress } from './ActivityRail';
@@ -50,9 +51,11 @@ export default function Reader({ workspace, onBack, embedded = false }: ReaderPr
   const task = workspace.activity.activeTask;
   const history = workspace.activity.activeHistoryRecord;
   const record = task ?? history;
-  const [mode, setMode] = useState<ReadingMode>('original');
-  const [segmented, setSegmented] = useState(false);
-  const [timestamps, setTimestamps] = useState(true);
+  const [selectedMode, setMode] = useState<ReadingMode>('original');
+  const [selectedSegmented, setSegmented] = useState(false);
+  const [selectedTimestamps, setTimestamps] = useState(true);
+  const pageContent = useContentTransition({ mode: selectedMode, segmented: selectedSegmented, timestamps: selectedTimestamps }, `${selectedMode}:${selectedSegmented}:${selectedTimestamps}`);
+  const { mode, segmented, timestamps } = pageContent.displayedValue;
   const [query, setQuery] = useState('');
   const [currentHit, setCurrentHit] = useState(-1);
   const [removing, setRemoving] = useState(false);
@@ -67,7 +70,7 @@ export default function Reader({ workspace, onBack, embedded = false }: ReaderPr
   const displayStrings = mode === 'logs' ? task?.logs.flatMap((entry) => [normalizeUiText(entry.message), entry.context ?? '']) ?? [] : segmented && rows.length ? rows.flatMap((row) => mode === 'original' ? [row.original ?? ''] : mode === 'translation' ? [row.translation ?? ''] : [row.original ?? '', row.translation ?? '']) : mode === 'original' ? [original] : mode === 'translation' ? [translation] : [original, translation];
   const hitCount = displayStrings.reduce((count, text) => count + literalMatches(text, query).length, 0);
 
-  useEffect(() => { readingRef.current?.querySelectorAll('[data-reader-hit]').forEach((hit) => hit.removeAttribute('data-current')); setCurrentHit(-1); }, [query, mode, segmented, record?.id, mode === 'logs' ? logText : original, mode === 'logs' ? '' : translation]);
+  useEffect(() => { readingRef.current?.querySelectorAll('[data-reader-hit]').forEach((hit) => hit.removeAttribute('data-current')); setCurrentHit(-1); }, [query, pageContent.displayedKey, record?.id, mode === 'logs' ? logText : original, mode === 'logs' ? '' : translation]);
   useEffect(() => { if (removalRequested.current && !record && !embedded) onBack?.(); }, [record, onBack, embedded]);
   const removeRecord = async (): Promise<void> => {
     if (!record || removing) return;
@@ -94,23 +97,23 @@ export default function Reader({ workspace, onBack, embedded = false }: ReaderPr
     <section className={`studio-reader${embedded ? ' is-embedded' : ''}`} aria-labelledby="studio-reader-title">
       {!embedded ? <div className="studio-reader-path"><GlassButton onClick={onBack}><span aria-hidden="true">←</span>资料库</GlassButton><span className={`studio-status is-${statusTones[record.status]}`}><span aria-hidden="true" />{statusLabels[record.status]}</span></div> : null}
       <header className="studio-reader-heading"><div><p className="studio-eyebrow">{history ? '历史记录' : task?.downloadBehavior === 'downloadOnly' ? '媒体文件' : '文字与导出'}</p><h1 id="studio-reader-title">{getReadableName(record)}</h1>{task && !embedded ? <p className="studio-reader-source">{task.input}</p> : null}</div>{embedded ? <span className={`studio-status is-${statusTones[record.status]}`}><span aria-hidden="true" />{statusLabels[record.status]}</span> : null}</header>
-      {task && active ? <div className="studio-reader-live"><TaskProgress task={task} /></div> : null}
+      {task && (active || task.status === 'completed') ? <div className="studio-reader-live"><TaskProgress task={task} /></div> : null}
       {record.error ? <div className="studio-notice is-danger" role="alert"><Icon name="warning" /><div><strong>处理未完成{task?.errorCode ? ` · ${task.errorCode}` : ''}</strong><p>{normalizeUiText(record.error)}</p></div></div> : null}
       {task?.warning || task?.mediaInfo?.qualityFallbackMessage ? <div className="studio-notice"><Icon name="info" /><p>{normalizeUiText(task.warning || task.mediaInfo?.qualityFallbackMessage)}</p></div> : null}
 
       {task ? <>
-        <GlassSurface className="studio-reading-tools" as="nav" radius={24} aria-label="阅读工具">
-          <GlassSegmentedControl className="studio-reading-modes" label="阅读内容" value={mode} onChange={(value) => setMode(value as ReadingMode)} options={readingModes.map((option) => ({ ...option, badge: option.value === 'logs' ? task.logs.length : undefined }))} />
+        <nav className="studio-reading-tools" aria-label="阅读工具">
+          <GlassSegmentedControl className="studio-reading-modes" label="阅读内容" value={selectedMode} onChange={(value) => setMode(value as ReadingMode)} options={readingModes.map((option) => ({ ...option, badge: option.value === 'logs' ? task.logs.length : undefined }))} />
           <div className="studio-reading-actions"><button disabled={!textToCopy.trim()} className="studio-tool-button" onClick={() => void workspace.copyText(textToCopy, mode === 'logs' ? '处理日志' : mode === 'translation' ? '中文译文' : mode === 'bilingual' ? '双语文本' : '原文')} type="button"><Icon name="copy" />复制</button><ActionMenu label={<><Icon name="download" />导出</>} ariaLabel="导出文件">{[false, true].map((translated) => <div className="studio-export-group" role="group" aria-label={translated ? '导出译文' : '导出原文'} key={String(translated)}><strong>{translated ? '中文译文' : '转写原文'}</strong><div>{exportOptions.filter((option) => option.translated === translated).map((option) => <button disabled={!task.outputFiles[option.kind]} key={option.kind} onClick={() => void workspace.exportTaskFile(task.id, option.kind)} type="button" role="menuitem">{option.label}</button>)}</div></div>)}</ActionMenu></div>
-        </GlassSurface>
+        </nav>
         <div className="studio-reading-preferences">
           <label className="studio-reader-search"><span className="studio-visually-hidden">搜索当前内容</span><input type="search" placeholder="在当前内容中查找" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); jumpToHit(event.shiftKey ? -1 : 1); } }} /></label>
           {query.trim() ? <div className="studio-find-controls" aria-label="查找结果"><span aria-live="polite">{currentHit >= 0 ? `${currentHit + 1} / ` : ''}{hitCount} 处</span><button type="button" disabled={!hitCount} onClick={() => jumpToHit(-1)} aria-label="上一个匹配">↑</button><button type="button" disabled={!hitCount} onClick={() => jumpToHit(1)} aria-label="下一个匹配">↓</button></div> : null}
-          {mode !== 'logs' && rows.length ? <div className="studio-reading-format"><label><GlassSwitch label="分段阅读" checked={segmented} onChange={setSegmented} />分段阅读</label>{segmented ? <label><GlassSwitch label="时间戳" checked={timestamps} onChange={setTimestamps} />时间戳</label> : null}</div> : null}
+          {mode !== 'logs' && rows.length ? <div className="studio-reading-format"><label><GlassSwitch label="分段阅读" checked={selectedSegmented} onChange={setSegmented} />分段阅读</label>{selectedSegmented ? <label><GlassSwitch label="时间戳" checked={selectedTimestamps} onChange={setTimestamps} />时间戳</label> : null}</div> : null}
         </div>
-        <div className={`studio-reading-page${mode === 'bilingual' ? ' is-bilingual' : ''}`} ref={readingRef} aria-label={readingModes.find((option) => option.value === mode)?.label}>
+        <div className={`studio-reading-page${pageContent.displayedValue.mode === 'bilingual' ? ' is-bilingual' : ''}`} ref={readingRef} aria-label={readingModes.find((option) => option.value === pageContent.displayedValue.mode)?.label}><div className="lens-content-transition studio-reading-content" ref={pageContent.contentRef}>
           {mode === 'logs' ? task.logs.length ? <ol className="studio-log-stream">{task.logs.map((entry, index) => <li key={`${entry.timestamp}-${index}`} className={`is-${entry.level}`}><header><time dateTime={entry.timestamp}>{formatLongDateTime(entry.timestamp)}</time><span>{entry.level}</span></header><p><Highlight text={normalizeUiText(entry.message)} query={query} /></p>{entry.context ? <pre><Highlight text={entry.context} query={query} /></pre> : null}</li>)}</ol> : <div className="studio-reading-empty"><Icon name="terminal" size={30} /><h2>处理开始后会生成日志</h2><p>下载、转写和翻译的进度会记录在这里。</p></div> : !hasText ? <div className="studio-reading-empty"><Icon name={mode === 'translation' ? 'translate' : 'waveform'} size={32} /><h2>{task.downloadBehavior === 'downloadOnly' ? '媒体已单独保存' : mode === 'translation' ? '还没有中文译文' : '文字正在路上'}</h2><p>{task.downloadBehavior === 'downloadOnly' ? '此任务只下载媒体。可以在下方打开文件或输出目录。' : mode === 'translation' ? task.translateToChinese ? '转写完成后将继续翻译，请稍候。' : '此任务没有启用中文翻译。' : active ? '继续添加媒体或选择其他任务，处理会在后台进行。' : '该任务没有生成转写内容，请查看日志了解详情。'}</p></div> : segmented && rows.length ? <ol className="studio-reading-segments">{rows.filter((row) => mode === 'original' ? Boolean(row.original) : mode === 'translation' ? Boolean(row.translation) : true).map((row) => <li key={row.key}>{timestamps ? <time className="studio-segment-time">{formatTimestamp(row.start)} <span aria-hidden="true">—</span> {formatTimestamp(row.end)}</time> : null}<div className="studio-segment-copy">{mode !== 'translation' && row.original ? <p lang={task.language}><Highlight text={row.original} query={query} /></p> : null}{mode !== 'original' && row.translation ? <p lang="zh-CN" className={mode === 'bilingual' ? 'studio-translated-copy' : undefined}><Highlight text={row.translation} query={query} /></p> : null}</div></li>)}</ol> : <div className="studio-reading-prose">{mode === 'bilingual' ? <><section aria-label="转写原文"><h2>原文</h2><p lang={task.language}><Highlight text={original} query={query} /></p></section><section aria-label="中文译文"><h2>中文译文</h2><p lang="zh-CN"><Highlight text={translation || '此任务还没有中文译文。'} query={translation ? query : ''} /></p></section></> : <p lang={mode === 'translation' ? 'zh-CN' : task.language}><Highlight text={mode === 'translation' ? translation : original} query={query} /></p>}</div>}
-        </div>
+        </div></div>
       </> : <article className="studio-history-summary"><Icon name="history" size={30} /><h2>这项任务已归档</h2><p>历史记录保留了任务摘要。完整文本、字幕和日志可在输出目录中查看。</p>{history?.outputDir ? <button className="studio-path-button" onClick={() => void workspace.revealPath(history.outputDir!)} type="button"><Icon name="folder" />{history.outputDir}</button> : <p>这条记录没有可用的输出目录。</p>}</article>}
 
       <section className="studio-record-files" aria-labelledby="studio-files-title"><header><h2 id="studio-files-title">文件与任务</h2><div className="studio-record-actions">

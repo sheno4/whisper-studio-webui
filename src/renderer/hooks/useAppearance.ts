@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import {initializeGlassIntensity} from '../glass/material-intensity';
 
 export type Appearance = 'system' | 'light' | 'dark';
-export type Material = 'system' | 'glass' | 'solid';
+export type Material = 'glass' | 'solid';
 const storageKey = 'whisper-studio.appearance';
 
 function readPreferences(): { appearance: Appearance; material: Material } {
@@ -9,15 +10,15 @@ function readPreferences(): { appearance: Appearance; material: Material } {
     const stored = JSON.parse(window.localStorage.getItem(storageKey) || '{}') as Record<string, unknown>;
     return {
       appearance: stored.appearance === 'light' || stored.appearance === 'dark' ? stored.appearance : 'system',
-      // Version 2 automatically saved system on first mount. Preserve an
-      // explicit solid choice, but let the revised glass workspace actually
-      // start with its intended material. A new explicit system choice is kept.
-      material: stored.material === 'solid' ? 'solid' : stored.materialVersion === 3 && stored.material === 'system' ? 'system' : 'glass'
+      // Glass is rendered by this application. Migrate the retired automatic
+      // material choice to glass while preserving an explicit solid choice.
+      material: stored.material === 'solid' ? 'solid' : 'glass'
     };
   } catch { return { appearance: 'system', material: 'glass' }; }
 }
 
 export function initializeAppearance(): void {
+  initializeGlassIntensity();
   const preferences = readPreferences();
   document.documentElement.dataset.appearance = preferences.appearance;
   document.documentElement.dataset.material = preferences.material;
@@ -35,7 +36,7 @@ export function useAppearance(): {
   useEffect(() => {
     document.documentElement.dataset.appearance = preferences.appearance;
     document.documentElement.dataset.material = preferences.material;
-    try { window.localStorage.setItem(storageKey, JSON.stringify({ ...preferences, materialVersion: 3 })); }
+    try { window.localStorage.setItem(storageKey, JSON.stringify({ ...preferences, materialVersion: 4 })); }
     catch { /* Private browsing still supports an in-memory preference. */ }
   }, [preferences]);
   return {

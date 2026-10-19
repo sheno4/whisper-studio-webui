@@ -22,10 +22,17 @@
   transform-origin: var(--transform-origin); transform: scale(1); transition: transform 180ms var(--ease-out);
 }
 .glass-select-popup[data-glass-mode='optical'], .glass-action-menu[data-glass-mode='optical'] { background: transparent; }
+.glass-select-popup:has(> .rdev-material),.glass-action-menu:has(> .rdev-material) { border-color:transparent;box-shadow:none; }
 .glass-select-popup[data-glass-mode='frosted'], .glass-action-menu[data-glass-mode='frosted'] { backdrop-filter: blur(5px) saturate(1.35); }
 .glass-select-popup[data-glass-mode='solid'], .glass-action-menu[data-glass-mode='solid'], .glass-select-trigger[data-glass-mode='solid'] { background: var(--surface-raised); }
 .glass-select-popup[data-starting-style], .glass-select-popup[data-ending-style], .glass-action-menu[data-starting-style], .glass-action-menu[data-ending-style] { transform: scale(.97); }
 .glass-select-popup[data-ending-style], .glass-action-menu[data-ending-style] { transition-duration: 125ms; }
+/* Material geometry is driven by the shared spring, while Base UI owns the
+   closing lifetime via actionsRef.unmount. The host must not itself transform. */
+.glass-select-popup[data-liquid-popover],.glass-action-menu[data-liquid-popover],
+.glass-select-popup[data-liquid-popover][data-starting-style],.glass-action-menu[data-liquid-popover][data-starting-style],
+.glass-select-popup[data-liquid-popover][data-ending-style],.glass-action-menu[data-liquid-popover][data-ending-style] { transform:none;transition:none; }
+.glass-select-popup[data-liquid-popover][data-closed],.glass-action-menu[data-liquid-popover][data-closed] { pointer-events:none; }
 .glass-select-list { position: relative; padding: 6px; overflow-y: auto; max-height: min(340px, var(--available-height)); overscroll-behavior: contain; scroll-padding-block: 6px; scrollbar-width: thin; }
 .glass-select-option { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; min-height: 40px; gap: 18px; padding: 9px 11px; border-radius: 11px; outline: none; font-size: 13px; line-height: 1.45; cursor: default; user-select: none; }
 .glass-select-option-text { overflow-wrap: anywhere; }
@@ -41,6 +48,12 @@
 .glass-action-menu { width: max-content; min-width: 210px; max-width: min(360px, calc(100vw - 24px)); }
 .glass-action-menu-content { position: relative; padding: 7px; overflow-y: auto; max-height: min(340px, var(--available-height)); overscroll-behavior: contain; scrollbar-width: thin; }
 .glass-action-menu .glass-menu-item { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 10px 13px; border: 0; background: transparent; border-radius: 11px; text-align: left; color: var(--ink); font-size: 13px; outline: none; cursor: default; }
+/* Optical highlights sample the real rows before the later Studio light pass.
+   The semantic items retain their original hit targets and keyboard behavior. */
+.glass-select-popup[data-glass-mode='optical'] .glass-select-option,
+.glass-action-menu[data-glass-mode='optical'] .glass-menu-item { z-index:0; }
+.glass-select-popup[data-glass-mode='optical'] .glass-liquid-highlight,
+.glass-action-menu[data-glass-mode='optical'] .glass-liquid-highlight { z-index:1; }
 .glass-action-menu .glass-menu-item:disabled, .glass-action-menu .glass-menu-item[data-disabled] { color: var(--muted); cursor: default; }
 .glass-action-menu .glass-menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .glass-action-menu .studio-export-group { min-width: min(260px, calc(100vw - 50px)); padding: 12px 9px; }

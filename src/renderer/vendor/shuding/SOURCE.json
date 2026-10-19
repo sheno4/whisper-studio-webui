@@ -1,0 +1,13 @@
+{
+  "license": "MIT",
+  "repository": "https://github.com/shuding/liquid-glass",
+  "recordedAt": "2026-10-16",
+  "revision": "a2d2e847f793430e3409a52927af815a23f4d372",
+  "licenseSha256": "f53a4041f05e6e5a40ee84b2137ede1e935e21eb93e8a2353380763fc03334d3",
+  "upstreamFiles": [
+    {
+      "sha256": "2a384857b6c862cdc46bc81acf20e34c6778f51feb0a49c3f8370cdff3f9dc8c",
+      "path": "upstream/liquid-glass.js"
+    }
+  ]
+}

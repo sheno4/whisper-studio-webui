@@ -1,6 +1,7 @@
-import { type CSSProperties, forwardRef, useCallback, useEffect, useId, useRef, useState } from "react"
+import { type CSSProperties, forwardRef, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { ShaderDisplacementGenerator, fragmentShaders } from "./shader-utils"
 import { displacementMap, polarDisplacementMap, prominentDisplacementMap } from "./utils"
+import {createLocalBezelMap,type LocalBezelMap} from './local-bezel'
 
 // Whisper Studio: keep generated maps bounded and shared across equivalent sizes.
 // The upstream shader and SVG optical pipeline are otherwise retained.
@@ -55,7 +56,7 @@ const getMap = (mode: "standard" | "polar" | "prominent" | "shader", shaderMapUr
 }
 
 /* ---------- SVG filter (edge-only displacement) ---------- */
-const GlassFilter: React.FC<{ id: string; displacementScale: number; aberrationIntensity: number; width: number; height: number; mode: "standard" | "polar" | "prominent" | "shader"; shaderMapUrl?: string; displacementMapUrl?: string }> = ({
+const GlassFilter: React.FC<{ id: string; displacementScale: number; aberrationIntensity: number; width: number; height: number; mode: "standard" | "polar" | "prominent" | "shader"; shaderMapUrl?: string; displacementMapUrl?: string;localMap?:LocalBezelMap|null }> = ({
   id,
   displacementScale,
   aberrationIntensity,
@@ -64,16 +65,17 @@ const GlassFilter: React.FC<{ id: string; displacementScale: number; aberrationI
   mode,
   shaderMapUrl,
   displacementMapUrl,
+  localMap,
 }) => (
-  <svg style={{ position: "absolute", width, height }} aria-hidden="true">
+  <svg style={{ position: "absolute", width, height }} aria-hidden="true" data-rdev-map={localMap?'local-bezel':'upstream'} data-rdev-map-width={localMap?.width} data-rdev-map-height={localMap?.height} data-rdev-map-pixels={localMap?.pixels} data-rdev-bezel={localMap?.bezel} data-rdev-max-offset={localMap?.maxOffset}>
     <defs>
       <radialGradient id={`${id}-edge-mask`} cx="50%" cy="50%" r="50%">
         <stop offset="0%" stopColor="black" stopOpacity="0" />
         <stop offset={`${Math.max(30, 80 - aberrationIntensity * 2)}%`} stopColor="black" stopOpacity="0" />
         <stop offset="100%" stopColor="white" stopOpacity="1" />
       </radialGradient>
-      <filter id={id} x="-35%" y="-35%" width="170%" height="170%" colorInterpolationFilters="sRGB">
-        <feImage x="0" y="0" width="100%" height="100%" result="DISPLACEMENT_MAP" href={displacementMapUrl || getMap(mode, shaderMapUrl)} preserveAspectRatio="xMidYMid slice" />
+      <filter id={id} filterUnits={localMap?'userSpaceOnUse':undefined} primitiveUnits={localMap?'userSpaceOnUse':undefined} x={localMap?-localMap.maxOffset*1.4:'-35%'} y={localMap?-localMap.maxOffset*1.4:'-35%'} width={localMap?width+localMap.maxOffset*2.8:'170%'} height={localMap?height+localMap.maxOffset*2.8:'170%'} colorInterpolationFilters="sRGB">
+        <feImage x="0" y="0" width={localMap?width:'100%'} height={localMap?height:'100%'} result="DISPLACEMENT_MAP" href={localMap?.url||displacementMapUrl||getMap(mode,shaderMapUrl)} preserveAspectRatio={localMap?'none':'xMidYMid slice'} />
 
         {/* Create edge mask using the displacement map itself */}
         <feColorMatrix
@@ -86,7 +88,7 @@ const GlassFilter: React.FC<{ id: string; displacementScale: number; aberrationI
           result="EDGE_INTENSITY"
         />
         <feComponentTransfer in="EDGE_INTENSITY" result="EDGE_MASK">
-          <feFuncA type="discrete" tableValues={`0 ${aberrationIntensity * 0.05} 1`} />
+          <feFuncA type={localMap?'table':'discrete'} tableValues={localMap?'0 1':`0 ${aberrationIntensity * 0.05} 1`} />
         </feComponentTransfer>
 
         {/* Original undisplaced image for center */}
@@ -174,6 +176,7 @@ const GlassContainer = forwardRef<
     onClick?: () => void
     mode?: "standard" | "polar" | "prominent" | "shader"
     displacementMapUrl?: string
+    localOptics?: boolean
   }>
 >(
   (
@@ -197,11 +200,13 @@ const GlassContainer = forwardRef<
       onClick,
       mode = "standard",
       displacementMapUrl,
+      localOptics = false,
     },
     ref,
   ) => {
     const filterId = useId()
     const [shaderMapUrl, setShaderMapUrl] = useState<string>("")
+    const localMap=useMemo(()=>localOptics&&glassSize.width>0&&glassSize.height>0?createLocalBezelMap(glassSize.width,glassSize.height,cornerRadius):null,[localOptics,glassSize.width,glassSize.height,cornerRadius])
 
     const isFirefox = navigator.userAgent.toLowerCase().includes("firefox")
 
@@ -214,13 +219,15 @@ const GlassContainer = forwardRef<
     }, [mode, displacementMapUrl, glassSize.width, glassSize.height])
 
     const backdropStyle = {
-      filter: isFirefox ? null : `url(#${filterId})`,
-      backdropFilter: `blur(${(overLight ? 12 : 4) + blurAmount * 32}px) saturate(${saturation}%)`,
+      // Local mode gives SVG SourceGraphic the real native backdrop directly.
+      // Keep the original upstream placement for consumers without the adapter.
+      filter: localOptics||isFirefox ? undefined : `url(#${filterId})`,
+      backdropFilter: `${localOptics&&!isFirefox?`url(#${filterId}) `:''}blur(${(overLight ? 12 : 4) + blurAmount * 32}px) saturate(${saturation}%)`,
     }
 
     return (
       <div ref={ref} className={`relative ${className} ${active ? "active" : ""} ${Boolean(onClick) ? "cursor-pointer" : ""}`} style={style} onClick={onClick}>
-        <GlassFilter mode={mode} id={filterId} displacementScale={displacementScale} aberrationIntensity={aberrationIntensity} width={glassSize.width} height={glassSize.height} shaderMapUrl={shaderMapUrl} displacementMapUrl={displacementMapUrl} />
+        <GlassFilter mode={mode} id={filterId} displacementScale={displacementScale} aberrationIntensity={aberrationIntensity} width={glassSize.width} height={glassSize.height} shaderMapUrl={shaderMapUrl} displacementMapUrl={displacementMapUrl} localMap={localMap} />
 
         <div
           className="glass"
@@ -243,6 +250,7 @@ const GlassContainer = forwardRef<
           {/* backdrop layer that gets wiggly */}
           <span
             className="glass__warp"
+            data-backdrop-source={localOptics?'browser-svg':'upstream'}
             style={
               {
                 ...backdropStyle,
@@ -290,6 +298,8 @@ export interface LiquidGlassProps {
   mode?: "standard" | "polar" | "prominent" | "shader"
   /** Optional precomputed map; the original SVG pipeline still applies. */
   displacementMapUrl?: string
+  /** Shape-local vector field and explicit SVG native-backdrop input adapter. */
+  localOptics?: boolean
   onClick?: () => void
 }
 
@@ -310,12 +320,13 @@ export default function LiquidGlass({
   style = {},
   mode = "standard",
   displacementMapUrl,
+  localOptics = false,
   onClick,
 }: LiquidGlassProps) {
   const glassRef = useRef<HTMLDivElement>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [isActive, setIsActive] = useState(false)
-  const [glassSize, setGlassSize] = useState({ width: 270, height: 69 })
+  const [glassSize, setGlassSize] = useState(localOptics?{width:0,height:0}:{width:270,height:69})
   const [internalGlobalMousePos, setInternalGlobalMousePos] = useState({ x: 0, y: 0 })
   const [internalMouseOffset, setInternalMouseOffset] = useState({ x: 0, y: 0 })
 
@@ -456,10 +467,14 @@ export default function LiquidGlass({
     }
   }, [globalMousePos, elasticity, calculateFadeInFactor])
 
-  // Whisper Studio: untransformed size changes only; no per-render layout reads.
-  useEffect(() => {
+  // Whisper Studio adapter: replace upstream's demo 270x69 coordinates before
+  // first paint, then observe untransformed size changes only. This one mount
+  // read is required for the original SVG map/filter's real local geometry.
+  useLayoutEffect(() => {
     const element = glassRef.current
     if (!element || typeof ResizeObserver === "undefined") return
+    const width = element.offsetWidth, height = element.offsetHeight
+    if (width > 0 && height > 0) setGlassSize(previous => previous.width === width && previous.height === height ? previous : { width, height })
     const observer = new ResizeObserver(([entry]) => {
       if (!entry) return
       const { width, height } = entry.contentRect
@@ -532,6 +547,7 @@ export default function LiquidGlass({
         onClick={onClick}
         mode={mode}
         displacementMapUrl={displacementMapUrl}
+        localOptics={localOptics}
       >
         {children}
       </GlassContainer>

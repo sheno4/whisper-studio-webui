@@ -1,0 +1,10 @@
+import {createGlassSystem,createComponent,bindKeyboardFocus} from '../index.js';
+const unbindFocus=bindKeyboardFocus(document);
+const stage=document.querySelector('#example-stage'),result=document.querySelector('#result');
+const toggle=createComponent('switch',{label:'Focus',onChange:checked=>{result.textContent=checked?'Focus is on.':'Focus is off.';}});
+const choices=createComponent('choices',{label:'Workspace',value:'ideas',options:[{value:'ideas',label:'Ideas'},{value:'work',label:'Work'},{value:'life',label:'Life'}],onChange:value=>{result.textContent=`Workspace: ${value}.`;}});
+const save=createComponent('button',{label:'Save this moment',sound:'success',onPress:()=>{result.textContent='Moment saved.';}});
+stage.append(toggle.element,choices.element,save.element);
+const system=createGlassSystem(stage),sound=document.querySelector('#sound');sound.checked=system.sound.enabled;
+sound.addEventListener('change',()=>{system.sound.set({enabled:sound.checked});if(sound.checked)system.sound.play('switchOn');});
+window.addEventListener('pagehide',()=>{unbindFocus();system.destroy();[toggle,choices,save].forEach(control=>control.destroy());});

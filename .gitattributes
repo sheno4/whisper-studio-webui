@@ -15,6 +15,10 @@
 *.yaml text eol=lf
 *.bat text eol=crlf
 
+# Keep pinned upstream checksum inputs identical on Windows and Linux.
+src/renderer/vendor/lens-native/LICENSE text eol=lf
+src/renderer/vendor/lens-native/SHA256SUMS text eol=lf
+
 *.ico binary
 *.jpeg binary
 *.jpg binary

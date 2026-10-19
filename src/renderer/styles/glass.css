@@ -21,7 +21,7 @@
 .studio-workbench-root > .studio-landscape { z-index: -2; }
 .studio-workbench-root.webgl-ready > .studio-landscape { visibility: hidden; }
 .studio-workbench-root.lg-stage[data-scene] { color: var(--ink); background: transparent; }
-.lg-stage .glass-surface[data-glass-mode="optical"] {
+.lg-stage .glass-surface[data-glass-mode="optical"]:not(.studio-primary,.studio-destructive,.prefs-button-primary) {
   background: transparent; backdrop-filter: none; box-shadow: none;
 }
 .glass-surface[data-glass-mode="frosted"] {

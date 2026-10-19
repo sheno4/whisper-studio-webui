@@ -1,8 +1,6 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
-import { createSwitch, type SwitchHandle } from '../vendor/lens/switch.js';
-import { useGlassCapability } from './capabilities';
-import {createPortal} from 'react-dom';
-import {RdevMaterial} from './RdevMaterial';
+import { useLayoutEffect, useRef, type CSSProperties } from 'react';
+import { createComponent, type ValueHandle } from '../vendor/lens-native/index.js';
+import { releaseLensRoot, scheduleLensMount } from '../lens/Runtime';
 
 export type GlassSwitchProps = {
   label: string;
@@ -13,36 +11,38 @@ export type GlassSwitchProps = {
   style?: CSSProperties;
 };
 
-/** Empty React host; Lens owns one native button and its matching Jelly thumb. */
+/** The original factory owns the semantic switch and thumb. Its only spring
+ * is registered with the same stage as every other Lens component. */
 export function GlassSwitch({ className = '', style, ...props }: GlassSwitchProps): React.JSX.Element {
   const host = useRef<HTMLSpanElement>(null);
-  const control = useRef<SwitchHandle | undefined>(undefined);
-  const [materialHost,setMaterialHost]=useState<HTMLElement|null>(null);
+  const control = useRef<ValueHandle<boolean> | null>(null);
   const latest = useRef(props); latest.current = props;
-  const [revision, reconcile] = useState(0);
-  const glass = useGlassCapability();
-
   useLayoutEffect(() => {
     const root = host.current;
     if (!root) return;
-    const instance = createSwitch({ ...latest.current, onChange: checked => {
-      latest.current.onChange(checked);
-      // A parent that declines a change still owns the model. A successful
-      // acknowledgement matches instance.value and leaves the release spring.
-      reconcile(current => current + 1);
-    } });
-    control.current = instance; root.append(instance.element);
-    setMaterialHost(instance.element.querySelector('.lg-switch-thumb'));
-    return () => { control.current = undefined; instance.destroy(); instance.element.remove(); };
+    const instance = createComponent('switch', {
+      label: latest.current.label, checked: latest.current.checked,
+      onChange: checked => {
+        const button = instance.element as HTMLButtonElement;
+        if (button.matches(':disabled')) { instance.setValue(latest.current.checked); return; }
+        latest.current.onChange(checked);
+        queueMicrotask(() => {
+          if (control.current === instance && instance.value !== latest.current.checked) instance.setValue(latest.current.checked);
+        });
+      }
+    });
+    (instance.element as HTMLButtonElement).disabled = Boolean(latest.current.disabled);
+    control.current = instance; root.append(instance.element); scheduleLensMount(instance.element);
+    return () => { control.current = null; releaseLensRoot(instance.element); instance.destroy(); instance.element.remove(); };
   }, []);
-
-  useLayoutEffect(() => { control.current?.update({ label: props.label, disabled: props.disabled ?? false }); }, [props.label, props.disabled]);
   useLayoutEffect(() => {
-    if (control.current && control.current.value !== props.checked) control.current.setValue(props.checked, { force: true, snap: true, cancel: true });
-  }, [props.checked, revision]);
-
-  const mode = glass.mode;
-  return <span ref={host} className={`glass-switch ${className}`.trim()} style={style} data-glass-switch-host data-glass-mode={mode} data-glass-source={mode === 'optical' ? 'rdev-liquid-glass-react' : undefined}>{materialHost&&mode==='optical'?createPortal(<RdevMaterial owner="switch"/>,materialHost):null}</span>;
+    const instance = control.current;
+    if (!instance) return;
+    instance.element.setAttribute('aria-label', props.label);
+    (instance.element as HTMLButtonElement).disabled = Boolean(props.disabled);
+    if (instance.value !== props.checked) instance.setValue(props.checked);
+  }, [props.label, props.checked, props.disabled]);
+  return <span ref={host} className={`glass-switch ${className}`.trim()} style={style} data-glass-switch-host data-glass-source="lens-native" />;
 }
 
 export default GlassSwitch;

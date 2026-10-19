@@ -1,4 +1,6 @@
-# Whisper Studio · 光学玻璃工作台
+# Whisper Studio · 前端说明
+
+当前实现与组件接入见 [Lens 原版前端](lens-native-rewrite.md)，本地分支为 `codex/lens-native-rewrite`。下面内容为早期工作台方案的历史说明，其分支、适配细节与验证不能替代当前记录。
 
 本地分支 `codex/lens-native-workbench` 接入 Lens 原版材质与弹性手势，并保留单页工作台。
 后端、REST/SSE 协议、任务控制器和持久化配置结构保持原样。

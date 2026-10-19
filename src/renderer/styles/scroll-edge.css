@@ -13,6 +13,8 @@
 }
 .glass-scroll-edge[hidden] { display: none !important; }
 .glass-scroll-edge[data-edge='bottom'] { --_glass-edge-dir: to top; }
+.glass-scroll-edge[data-edge='left'] { --_glass-edge-dir: to right; }
+.glass-scroll-edge[data-edge='right'] { --_glass-edge-dir: to left; }
 .glass-scroll-edge::before,
 .glass-scroll-edge::after,
 .glass-scroll-edge > .glass-scroll-edge-layer {
@@ -41,8 +43,7 @@
 .glass-scroll-edge[data-tone='dark'] > .glass-scroll-edge-layer { display: none; }
 
 /* Preserve the existing control layout, native scrolling and pointer behavior. */
-.workbench-activity-source,
-.studio-import-form .studio-import-source { position: sticky; top: 0; z-index: 3; }
+.workbench-activity-source { position: sticky; top: 0; z-index: 3; }
 .workbench-result-pane .studio-reader.is-embedded .studio-reading-tools { position: sticky; top: 0; z-index: 3; }
 
 :root[data-material='solid'] .glass-scroll-edge,

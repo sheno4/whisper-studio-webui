@@ -1,101 +1,126 @@
-import { Select } from '@base-ui/react/select';
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-
-import { useGlassCapability } from './capabilities';
-import { LiquidMenuHighlight } from './LiquidMenuHighlight';
-import { RdevMaterial } from './RdevMaterial';
+import { Children, isValidElement, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { createComponent, type MenuHandle } from '../vendor/lens-native/index.js';
+import { releaseLensRoot, scheduleLensMount } from '../lens/Runtime';
+import { bindLensMenuPopover, observeFieldsetDisabled } from './lens-menu-adapter';
 
 export interface GlassSelectOption { value: string; label: ReactNode; disabled?: boolean }
 export interface GlassSelectProps {
-  value: string;
-  onChange: (value: string) => void;
-  options: readonly GlassSelectOption[];
-  label: string;
-  disabled?: boolean;
-  id?: string;
-  name?: string;
-  required?: boolean;
-  form?: string;
-  className?: string;
-  placeholder?: string;
+  value: string; onChange: (value: string) => void; options: readonly GlassSelectOption[]; label: string;
+  disabled?: boolean; id?: string; name?: string; required?: boolean; form?: string; className?: string; placeholder?: string;
   'aria-describedby'?: string;
 }
+function labelText(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (isValidElement<{ children?: ReactNode }>(node)) return labelText(node.props.children);
+  return Children.toArray(node).map(item => isValidElement<{ children?: ReactNode }>(item) ? labelText(item.props.children) : typeof item === 'string' || typeof item === 'number' ? String(item) : '').join('');
+}
+type SelectNodes = { instance: MenuHandle; trigger: HTMLButtonElement; panel: HTMLElement; value: HTMLElement; items: HTMLButtonElement[] };
 
-/** Controlled business value; Base UI owns selection, focus, typeahead and
- * dismissal. Opening or highlighting an option never commits a value. */
-export default function GlassSelect({ value, onChange, options, label, disabled = false, id, name, required, form, className = '', placeholder = '请选择', 'aria-describedby': describedBy }: GlassSelectProps): React.JSX.Element {
-  const generatedId = useId();
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const popupRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const [container, setContainer] = useState<HTMLElement | null>(null);
-  const [open, setOpen] = useState(false);
-  const [inheritedDisabled, setInheritedDisabled] = useState(false);
-  const [hintId, setHintId] = useState<string>();
-  const glass = useGlassCapability();
-  const unavailable = disabled || inheritedDisabled || !options.some((option) => !option.disabled);
-  const selected = options.find((option) => option.value === value);
-
+/** A normal dropdown is an application semantic adapter over Lens's actual
+ * menu factory. Opening and keyboard highlighting never commit selection. */
+export default function GlassSelect(props: GlassSelectProps): React.JSX.Element {
+  const { value, options, label, disabled = false, id, name, required, form, className = '', placeholder = '请选择', 'aria-describedby': describedBy } = props;
+  const generated = useId(), triggerId = id ?? `lens-select-${generated}`;
+  const host = useRef<HTMLSpanElement>(null), native = useRef<HTMLSelectElement>(null), control = useRef<SelectNodes | null>(null);
+  const restoreTriggerFocus = useRef(false);
+  const latest = useRef(props); latest.current = props;
+  const [nodes, setNodes] = useState<SelectNodes | null>(null), [invalid, setInvalid] = useState(false);
+  const selected = options.find(option => option.value === value);
+  const optionKey = JSON.stringify(options.map(option => ({ value: option.value, disabled: Boolean(option.disabled) })));
   useLayoutEffect(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const hint = trigger.closest('label')?.querySelector('small');
-    const createdHintId = hint && !hint.id ? `${generatedId}-hint` : undefined;
-    if (hint) {
-      if (createdHintId) hint.id = createdHintId;
-      setHintId(hint.id);
-    }
-    setContainer(trigger.closest<HTMLElement>('[role="dialog"]') ?? document.querySelector<HTMLElement>('.studio-root') ?? document.body);
-    const fieldsets: HTMLFieldSetElement[] = [];
-    let ancestor = trigger.parentElement;
-    while (ancestor) { if (ancestor instanceof HTMLFieldSetElement) fieldsets.push(ancestor); ancestor = ancestor.parentElement; }
-    const syncDisabled = (): void => setInheritedDisabled(fieldsets.some((fieldset) => fieldset.disabled && !fieldset.querySelector(':scope > legend')?.contains(trigger)));
-    const observer = new MutationObserver(syncDisabled);
-    fieldsets.forEach((fieldset) => observer.observe(fieldset, { attributes: true, attributeFilter: ['disabled'] }));
-    syncDisabled();
-    return () => {
-      observer.disconnect();
-      if (hint && createdHintId && hint.id === createdHintId) hint.removeAttribute('id');
+    const root = host.current; if (!root) return;
+    const p = latest.current;
+    let current: SelectNodes;
+    const instance = createComponent('menu', {
+      label: p.label,
+      options: p.options.length ? p.options.map((option, index) => ({ value: option.value, label: labelText(option.label).trim() || `${p.label} ${index + 1}`, disabled: option.disabled })) : [{ value: '__lens_empty__', label: '暂无可用选项', disabled: true }],
+      onAction: next => {
+        if (!current || current.trigger.matches(':disabled') || latest.current.disabled || next === latest.current.value || !latest.current.options.some(option => option.value === next && !option.disabled)) return;
+        setInvalid(false); latest.current.onChange(next);
+      }
+    });
+    const trigger = instance.element.querySelector<HTMLButtonElement>(':scope > button')!, panel = instance.element.querySelector<HTMLElement>('.lg-menu-popover')!;
+    const valueNode = document.createElement('span'), chevron = document.createElement('span');
+    valueNode.className = 'glass-select-value'; chevron.className = 'glass-select-icon'; chevron.setAttribute('aria-hidden', 'true'); chevron.textContent = '⌄';
+    trigger.replaceChildren(valueNode, chevron); trigger.classList.add('glass-select-trigger');
+    trigger.id = triggerId; trigger.setAttribute('role', 'combobox'); trigger.setAttribute('aria-haspopup', 'listbox'); trigger.setAttribute('aria-autocomplete', 'none');
+    panel.classList.add('glass-select-popup'); panel.setAttribute('role', 'listbox');
+    const items = [...panel.querySelectorAll<HTMLButtonElement>('.lg-menu-item')];
+    items.forEach((button, index) => { button.setAttribute('role', 'option'); button.id = `${triggerId}-option-${index}`; button.classList.add('glass-select-option'); button.replaceChildren(); });
+    current = { instance, trigger, panel, value: valueNode, items }; control.current = current;
+    root.append(instance.element);
+    const abort = new AbortController(), signal = abort.signal;
+    const syncDisabled = (): void => {
+      trigger.disabled = Boolean(latest.current.disabled || !latest.current.options.some(option => !option.disabled));
+      if (trigger.matches(':disabled')) instance.close();
     };
-  }, [generatedId]);
-  useLayoutEffect(() => { if (unavailable && open) setOpen(false); }, [unavailable, open]);
-
-  const escape = (event: React.KeyboardEvent): void => {
-    if (open && event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      setOpen(false);
-    }
-  };
-  return <Select.Root<string>
-    id={id ?? generatedId} value={selected ? value : null} items={options} disabled={unavailable} name={name} required={required} form={form}
-    open={open} modal={false} onOpenChange={(next, details) => {
-      if (next && (unavailable || triggerRef.current?.matches(':disabled'))) { details.cancel(); return; }
-      if (details.reason === 'escape-key') details.event.stopPropagation();
-      setOpen(next);
-    }} onValueChange={(next) => {
-      if (next === null || unavailable || triggerRef.current?.matches(':disabled') || next === value) return;
-      if (options.some((option) => option.value === next && !option.disabled)) onChange(next);
-    }}>
-    <Select.Trigger ref={triggerRef} className={`glass-select-trigger ${className}`.trim()} aria-label={label} aria-describedby={describedBy ?? hintId}
-      data-glass-mode={glass.mode} data-liquid-glass-source data-glass-select={id ?? generatedId} onKeyDownCapture={escape}>
-      {glass.mode === 'optical' ? <RdevMaterial owner="select" radius={13} interactionRef={triggerRef} /> : null}
-      <Select.Value className="glass-select-value" placeholder={options.length ? placeholder : '暂无可用选项'} />
-      <Select.Icon className="glass-select-icon"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg></Select.Icon>
-    </Select.Trigger>
-    <Select.Portal container={container}>
-      <Select.Positioner className="glass-select-positioner" sideOffset={7} align="start" positionMethod="fixed" alignItemWithTrigger={false} collisionPadding={12} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}>
-        <Select.Popup ref={popupRef} className="glass-select-popup" data-glass-mode={glass.mode} data-liquid-glass-source aria-label={label} onKeyDownCapture={escape}>
-          {glass.mode === 'optical' ? <RdevMaterial owner="menu" radius={18} interactionRef={popupRef} /> : null}
-          <Select.List ref={listRef} className="glass-select-list" aria-label={label}>
-            <LiquidMenuHighlight hostRef={listRef} active={open} itemSelector=".glass-select-option" selectedFallback />
-            {options.map((option) => <Select.Item key={option.value} value={option.value} disabled={option.disabled} label={typeof option.label === 'string' ? option.label : undefined} className="glass-select-option" data-value={option.value}>
-              <Select.ItemText className="glass-select-option-text">{option.label}</Select.ItemText>
-              <Select.ItemIndicator className="glass-select-check"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" /></svg></Select.ItemIndicator>
-            </Select.Item>)}
-          </Select.List>
-        </Select.Popup>
-      </Select.Positioner>
-    </Select.Portal>
-  </Select.Root>;
+    const stopDisabled = observeFieldsetDisabled(trigger, syncDisabled);
+    const stopPopover = bindLensMenuPopover(instance, { matchWidth: true, onOpen: () => {
+      const index = latest.current.options.findIndex(option => option.value === latest.current.value && !option.disabled);
+      (items[index] ?? items.find(button => !button.disabled))?.focus({ preventScroll: true });
+    } });
+    let search = '', searchedAt = 0;
+    const typeahead = (event: KeyboardEvent): void => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing || event.key.length !== 1 || event.key === ' ') return;
+      const now = performance.now(); search = now - searchedAt > 650 ? event.key : search + event.key; searchedAt = now;
+      const index = items.findIndex((button, index) => !button.disabled && labelText(latest.current.options[index]?.label).trim().toLocaleLowerCase().startsWith(search.toLocaleLowerCase()));
+      if (index >= 0) { event.preventDefault(); if (trigger.getAttribute('aria-expanded') !== 'true') instance.open(); queueMicrotask(() => items[index]?.focus({ preventScroll: true })); }
+    };
+    trigger.addEventListener('keydown', event => {
+      if (trigger.matches(':disabled')) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+      typeahead(event);
+    }, { signal, capture: true });
+    panel.addEventListener('keydown', typeahead, { signal });
+    scheduleLensMount(instance.element); setNodes(current); syncDisabled();
+    // Replacing a focused option list removes the old active element. Restore
+    // its focus intent only while focus is still unclaimed after that removal.
+    if (restoreTriggerFocus.current && (document.activeElement === document.body || document.activeElement === document.documentElement || !document.activeElement) && !trigger.matches(':disabled')) trigger.focus({ preventScroll: true });
+    restoreTriggerFocus.current = false;
+    return () => {
+      restoreTriggerFocus.current = instance.element.contains(document.activeElement);
+      control.current = null; abort.abort(); stopDisabled(); stopPopover(); releaseLensRoot(instance.element); instance.destroy(); instance.element.remove();
+    };
+  }, [optionKey, triggerId]);
+  useLayoutEffect(() => {
+    const select = native.current, owner = select?.form;
+    if (!select || !owner) return;
+    const reset = (event: Event): void => {
+      // The browser applies native reset defaults after dispatch. The business
+      // value remains controlled, so restore it after that default action.
+      queueMicrotask(() => {
+        if (event.defaultPrevented || native.current !== select || !select.isConnected) return;
+        const p = latest.current;
+        select.value = p.options.some(option => option.value === p.value) ? p.value : '';
+        setInvalid(false);
+      });
+    };
+    owner.addEventListener('reset', reset);
+    return () => owner.removeEventListener('reset', reset);
+  }, [form]);
+  useLayoutEffect(() => {
+    const current = control.current; if (!current) return;
+    current.trigger.className = `lg-surface lg-button glass-select-trigger ${className}`.trim();
+    current.trigger.setAttribute('aria-label', label); current.panel.setAttribute('aria-label', label);
+    current.trigger.disabled = Boolean(disabled || !options.some(option => !option.disabled));
+    if (current.trigger.matches(':disabled')) current.instance.close();
+    const hint = current.trigger.closest('label')?.querySelector('small');
+    if (hint && !hint.id) hint.id = `${triggerId}-hint`;
+    const description = describedBy ?? hint?.id;
+    if (description) current.trigger.setAttribute('aria-describedby', description); else current.trigger.removeAttribute('aria-describedby');
+    current.trigger.setAttribute('aria-required', String(Boolean(required))); current.trigger.setAttribute('aria-invalid', String(invalid));
+    current.items.forEach((button, index) => {
+      const option = options[index]; if (!option) return;
+      button.disabled = Boolean(option.disabled); button.setAttribute('aria-selected', String(option.value === value));
+      button.setAttribute('aria-label', labelText(option.label)); button.dataset.value = option.value;
+    });
+  }, [nodes, className, label, value, options, disabled, describedBy, triggerId, required, invalid]);
+  return <span ref={host} className="glass-select-host" data-glass-source="lens-native">
+    <select ref={native} className="studio-visually-hidden glass-select-native" style={{ position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clipPath: 'inset(50%)', whiteSpace: 'nowrap', border: 0 }} aria-hidden="true" tabIndex={-1} name={name} form={form} required={required} disabled={disabled || !options.some(option => !option.disabled)} value={selected ? value : ''} onFocus={() => control.current?.trigger.focus()} onInvalid={event => { event.preventDefault(); setInvalid(true); control.current?.trigger.focus(); }} onChange={event => { const next = event.currentTarget.value; if (options.some(option => option.value === next && !option.disabled) && !event.currentTarget.matches(':disabled') && next !== value) { setInvalid(false); props.onChange(next); } }}>
+      {!options.some(option => option.value === '') ? <option value="" disabled>{placeholder}</option> : null}
+      {options.map(option => <option key={option.value} value={option.value} disabled={option.disabled}>{labelText(option.label)}</option>)}
+    </select>
+    {nodes ? createPortal(selected?.label ?? (options.length ? placeholder : '暂无可用选项'), nodes.value) : null}
+    {nodes ? options.map((option, index) => nodes.items[index] ? createPortal(<><span className="glass-select-option-text">{option.label}</span>{option.value === value ? <span className="glass-select-check" aria-hidden="true">✓</span> : null}</>, nodes.items[index], option.value) : null) : null}
+  </span>;
 }

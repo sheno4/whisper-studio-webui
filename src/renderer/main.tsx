@@ -1,20 +1,12 @@
-import { MotionConfig } from 'framer-motion';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 
 import App from './App';
 import { initializeAppearance } from './hooks/useAppearance';
 import './web-api';
-import './styles/lens.css';
-import './styles/glass.css';
-import './studio/studio.css';
-import './studio/content.css';
-import './studio/workbench.css';
-import './styles/segments.css';
-import './styles/scroll-edge.css';
-import './styles/switches.css';
-import './styles/rdev.css';
-import './styles/select.css';
+import './vendor/lens-native/tokens.css';
+import './vendor/lens-native/components.css';
+import './lens/workspace.css';
 
 function escapeHtml(value: string): string {
   return value
@@ -75,9 +67,7 @@ try {
   initializeAppearance();
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <React.StrictMode>
-      <MotionConfig reducedMotion="user">
-        <RenderBoundary><App /></RenderBoundary>
-      </MotionConfig>
+      <RenderBoundary><App /></RenderBoundary>
     </React.StrictMode>
   );
 } catch (error) {

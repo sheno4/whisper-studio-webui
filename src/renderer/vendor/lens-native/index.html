@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lens · Design system</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="components.css"><link rel="stylesheet" href="catalog.css"><link rel="stylesheet" href="optical-demo.css"></head>
+<body><header class="catalog-header"><a href="../index.html" class="catalog-brand">Lens</a><nav aria-label="Documentation"><a href="#components" data-copy="components">组件</a><a href="#tokens" data-copy="tokens">设计变量</a><a href="#extend" data-copy="extend">接入与扩展</a></nav><div class="catalog-languages"><button data-lang="zh" aria-pressed="true">中文</button><button data-lang="en" aria-pressed="false">EN</button></div></header>
+<main class="catalog-main"><section class="catalog-intro"><div><h1 data-copy="title">Lens 设计系统</h1><p data-copy="intro">厚润材质、弹性手势与轻声反馈，共用同一套规则。</p></div><span class="catalog-version">v1.1.0-showcase.1 · Native web</span></section>
+<section id="optical-demo"></section>
+<section id="components" aria-labelledby="components-heading"><div class="catalog-section-heading"><h2 id="components-heading" data-copy="live">真实交互组件</h2><a href="examples/basic.html" data-copy="example">打开独立接入示例</a></div>
+<div class="catalog-toolbar"><label><span data-copy="finish">材质</span><select id="catalog-material"><option value="thick" data-copy="thick">厚润</option><option value="clear" data-copy="clear">通透</option><option value="soft" data-copy="soft">柔和</option></select></label><label><span data-copy="scene">背景</span><select id="catalog-scene"><option value="aurora" data-copy="aurora">流光</option><option value="ocean" data-copy="ocean">深海</option><option value="grid" data-copy="grid">光学网格</option></select></label><label class="catalog-sound"><input type="checkbox" id="catalog-sound" checked><span data-copy="sounds">交互音效</span></label><label class="catalog-volume"><span data-copy="volume">音量</span><input type="range" id="catalog-volume" min="0" max="100" value="28"><output id="catalog-volume-value">28%</output></label></div>
+<div id="catalog-stage" class="catalog-stage"><div class="catalog-samples" id="catalog-samples"></div></div><p id="catalog-status" class="catalog-status" role="status"></p></section>
+<section id="tokens" class="catalog-doc-section"><h2 data-copy="tokensTitle">统一变量，保留个性</h2><p data-copy="tokensIntro">共享变量来自 tokens.js，并生成 CSS 与 JSON。页面可覆盖 CSS 变量；材质参数、声音和组件都可独立扩展。</p><div class="catalog-token-table"><table><thead><tr><th data-copy="layer">层级</th><th data-copy="source">来源</th><th data-copy="includes">包含</th></tr></thead><tbody><tr><td data-copy="visual">视觉</td><td><code>tokens.css</code></td><td data-copy="visualDetail">颜色、字号、间距、圆角、表面与阴影</td></tr><tr><td data-copy="material">材质</td><td><code>materialPresets</code></td><td>Thick · Clear · Soft</td></tr><tr><td data-copy="motion">动效</td><td><code>tokens.motion</code></td><td data-copy="motionDetail">弹性、时长、缓动与减弱动态效果</td></tr><tr><td data-copy="sound">声音</td><td><code>soundCues</code></td><td data-copy="soundDetail">13 种短音效、音量、触发节流和静音</td></tr></tbody></table></div></section>
+<section id="extend" class="catalog-doc-section"><h2 data-copy="extendTitle">从一个控件开始</h2><p data-copy="extendIntro">复制整个 design-system 文件夹即可接入，无运行时依赖。组件用语义化 HTML，渲染和音效在外层统一管理。</p><pre><code>import {createComponent, createGlassSystem}
+  from './design-system/index.js';
+
+const toggle = createComponent('switch', {
+  label: 'Focus', checked: false,
+  onChange: value => console.log(value)
+});
+stage.append(toggle.element);
+const system = createGlassSystem(stage);
+
+// On unmount:
+system.destroy();
+toggle.destroy();</code></pre><div class="catalog-doc-links"><a href="examples/optics.html" data-copy="showcase">完整展示</a><a href="README.md" data-copy="api">API 与扩展指南</a><a href="DESIGN.md" data-copy="rules">设计规则</a><a href="tokens.json" data-copy="tokenFile">查看 JSON 变量</a><a href="../index.html" data-copy="lab">返回材质实验室</a></div><p class="catalog-limitation" data-copy="limit">折射覆盖画布背景与玻璃层，不会自动捕获任意 DOM。WebGL 不可用时使用 CSS 毛玻璃，音效不可用时保持所有交互。</p></section>
+</main><script type="module" src="catalog.js"></script></body></html>

@@ -1,0 +1,13 @@
+import {writeFile} from 'node:fs/promises';
+import {tokens} from './tokens.js';
+const pairs=[];
+for(const [key,value] of Object.entries(tokens.color))pairs.push([`color-${key}`,value]);
+pairs.push(['font-family',tokens.type.family]);
+for(const key of ['body','control','caption'])pairs.push([`font-${key}`,`${tokens.type[key]}px`]);
+for(const group of ['space','radius'])for(const [key,value] of Object.entries(tokens[group]))pairs.push([`${group}-${key}`,`${value}px`]);
+for(const [key,value] of Object.entries(tokens.surface))pairs.push([`surface-${key}`,value]);
+pairs.push(['ease-spring',tokens.motion.spring]);
+for(const key of ['fast','normal','feedback'])pairs.push([`duration-${key}`,`${tokens.motion[key]}ms`]);
+await writeFile(new URL('tokens.css',import.meta.url),'/* Generated from tokens.js by build-tokens.mjs. Override semantic tokens per root. */\n:root{'+pairs.map(([key,value])=>`--lg-${key}:${value}`).join(';')+'}\n');
+await writeFile(new URL('tokens.json',import.meta.url),JSON.stringify(tokens,null,2)+'\n');
+console.log('Generated CSS and JSON tokens.');

@@ -83,7 +83,8 @@ export function registerDialog(element: HTMLElement, options: DialogOptions): ()
     const originalOverflow = document.body.style.overflow;
     const originalPadding = document.body.style.paddingRight;
     const scrollbarWidth = view ? Math.max(0, view.innerWidth - document.documentElement.clientWidth) : 0;
-    if (scrollbarWidth && view) {
+    const reservedGutter = view?.getComputedStyle(document.documentElement).scrollbarGutter.includes('stable');
+    if (scrollbarWidth && view && !reservedGutter) {
       const padding = Number.parseFloat(view.getComputedStyle(document.body).paddingRight) || 0;
       document.body.style.paddingRight = `${padding + scrollbarWidth}px`;
     }

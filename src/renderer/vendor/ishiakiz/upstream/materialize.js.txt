@@ -1,0 +1,111 @@
+function setOriginFrom(inst, src) {
+  const el = inst.el;
+  if (inst.originFrame) { inst.originFrame(); inst.originFrame = null; }
+  if (!src) { el.style.removeProperty('transform-origin'); return; }
+  const place = () => {
+    const s = src instanceof Element ? layoutRect(src) : src;
+    const r = layoutRect(el), kx = el.offsetWidth / (r.width || 1), ky = el.offsetHeight / (r.height || 1);
+    el.style.transformOrigin = `${fmt((s.left + s.width / 2 - r.left) * kx, 1)}px ${fmt((s.top + s.height / 2 - r.top) * ky, 1)}px`;
+  };
+  if (el.offsetWidth || el.offsetHeight) { place(); return; }
+  const off = (inst.originFrame = onFrame(() => {
+    off();
+    inst.originFrame = null;
+    if (!inst.dead && (el.offsetWidth || el.offsetHeight)) place();
+  }));
+}
+
+function matState(inst) {
+  if (inst.mat) return inst.mat;
+  const m = (inst.mat = { token: 0, content: null });
+  const writeScale = () => inst.setChannel('mat', { sx: m.scale.value, sy: m.scale.value, ty: m.y.value });
+  m.amount = new Spring({ value: 1, preset: 'smooth', onUpdate: (v) => {
+    inst.anim.mat = v;
+    inst.setVar('--_lg-mat', fmt(clamp(v, 0, 1)));
+    inst.writeFork();
+  } });
+  m.scale = new Spring({ value: 1, preset: 'unlift', onUpdate: writeScale });
+  m.y = new Spring({ value: 0, preset: 'unlift', onUpdate: writeScale });
+  return m;
+}
+
+function fadeContent(inst, from, to, ms, delay = 0) {
+  const m = inst.mat;
+  m.content?.stop();
+  m.content = tween(from, to, ms, (v) => inst.setVar('--_lg-content', fmt(v)), { delay });
+  return m.content.done;
+}
+
+/**
+ * opts: { from?: Element | DOMRect (scale origin), scale = 0.9 (menus 0.6), y = 0 (px start
+ * offset, sheets 24), spring?: preset for the scale (default 'unlift', 'smooth' above 100k px²) }.
+ */
+async function materialize(inst, { from, scale = 0.9, y = 0, spring: preset } = {}) {
+  if (inst.dead) return;
+  if (inst.lookStale) inst.reconcile(); // a preference changed while it was hidden (applyLook)
+  const el = inst.el, m = matState(inst), token = ++m.token;
+  el.setAttribute('data-lg-mat', '');
+  setOriginFrom(inst, from);
+  m.amount.jump(0);
+  inst.setVar('--_lg-content', '0');
+  if (isReducedMotion()) {
+    m.scale.jump(1); m.y.jump(0);
+    await Promise.all([tween(0, 1, 150, (v) => m.amount.jump(v)).done, fadeContent(inst, 0, 1, 150)]);
+  } else {
+    const scalePreset = preset || (inst.area > 100000 ? 'smooth' : 'unlift');
+    m.scale.jump(scale); m.y.jump(y);
+    inst.beginAnimation();
+    inst.syncMatMode();
+    await Promise.all([
+      m.amount.to(1, { preset: 'smooth' }),
+      m.scale.to(1, { preset: scalePreset }),
+      m.y.to(0, { preset: scalePreset }),
+      fadeContent(inst, 0, 1, 150, 60),
+    ]);
+    inst.endAnimation();
+  }
+  if (token !== m.token || inst.dead) return;
+  el.removeAttribute('data-lg-mat');
+  inst.clearChannel('mat');
+  inst.setVar('--_lg-mat', null);
+  inst.setVar('--_lg-content', null);
+  el.style.removeProperty('transform-origin');
+  emit(el, 'glass:materialized');
+}
+
+/**
+ * Runs the same channels in reverse. The element then stays invisible (layers and content)
+ * until materialize() is called again; callers usually hide or close it afterwards.
+ * opts: { to?: Element | DOMRect, scale = 0.9, y = 0, spring? }.
+ */
+async function dematerialize(inst, { to, scale = 0.9, y = 0, spring: preset } = {}) {
+  if (inst.dead) return;
+  const el = inst.el, m = matState(inst), token = ++m.token;
+  el.setAttribute('data-lg-mat', '');
+  setOriginFrom(inst, to);
+  const content = +(inst.el.style.getPropertyValue('--_lg-content') || 1);
+  if (isReducedMotion()) {
+    await Promise.all([tween(m.amount.value, 0, 150, (v) => m.amount.jump(v)).done, fadeContent(inst, content, 0, 150)]);
+  } else {
+    const scalePreset = preset || (inst.area > 100000 ? 'smooth' : 'unlift');
+    inst.beginAnimation();
+    inst.syncMatMode();
+    await Promise.all([
+      m.amount.to(0, { preset: 'smooth' }),
+      m.scale.to(scale, { preset: scalePreset }),
+      m.y.to(y, { preset: scalePreset }),
+      fadeContent(inst, content, 0, 120),
+    ]);
+    inst.endAnimation();
+  }
+  if (token !== m.token || inst.dead) return;
+  emit(el, 'glass:dematerialized');
+}
+
+Object.assign(I, {
+  materialize: (h, o) => materialize(h, o),
+  dematerialize: (h, o) => dematerialize(h, o),
+  /** Re-aims a running materialize at `src` (Element | DOMRect); see setOriginFrom. */
+  setMaterializeOrigin: (h, src) => setOriginFrom(h, src),
+});
+// ── core-15-lifecycle.js ────────────────────────────────────────────────────

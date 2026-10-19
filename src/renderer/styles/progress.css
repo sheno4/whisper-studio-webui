@@ -1,0 +1,35 @@
+/* Lens' pinned components.css owns the optical progress appearance: 46px
+   track, 4px fill inset, 6x14px emitter, 2px rim and original fiber/glow.
+   The 32px compact geometry is its existing .lg-lens-card-content variant. */
+.glass-progress { display:flow-root;min-width:0;width:100%; }
+.glass-progress .lg-progress { display:flow-root;min-width:0;width:100%; }
+.glass-progress .lg-progress-heading { min-width:0; }
+.glass-progress .lg-progress-heading > span {
+  flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.glass-progress .lg-progress-value { flex:none;min-inline-size:8ch;text-align:right; }
+.glass-progress[data-size=compact] .lg-progress-heading { height:18px;font-size:12px;line-height:18px; }
+.glass-progress[data-size=compact] .lg-progress-track { height:32px;margin:5px 0; }
+.glass-progress .lg-progress[data-motion=off] .lg-progress-fill,
+.glass-progress .lg-progress[data-motion=off] .lg-progress-emitter { transition:none; }
+.glass-progress .lg-progress[data-indeterminate=true] .lg-progress-track { overflow:hidden; }
+.glass-progress .lg-progress[data-indeterminate=true] .lg-progress-fill {
+  transform:translateX(-100%) scaleX(.32);animation:glass-progress-pending 1.35s linear infinite;animation-play-state:paused;
+}
+.glass-progress .lg-progress[data-indeterminate=true][data-pending-motion=true] .lg-progress-fill { animation-play-state:running; }
+.glass-progress .lg-progress[data-indeterminate=true] .lg-progress-emitter,
+.glass-progress .lg-progress[data-indeterminate=true] .lg-progress-fiber { opacity:0; }
+.glass-progress .lg-progress[data-indeterminate=true][data-pending-motion=false] .lg-progress-fill { animation:none;transform:scaleX(.32);opacity:.7; }
+.prefs-model > .glass-progress { margin:9px 0 2px; }
+.studio-model-row .glass-progress { margin-top:8px; }
+.prefs-model > p:not(.prefs-error) { min-height:2.8em;max-height:2.8em;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical; }
+@keyframes glass-progress-pending { to { transform:translateX(100%) scaleX(.32); } }
+@media (prefers-reduced-motion:reduce) {
+  .glass-progress .lg-progress-fill,.glass-progress .lg-progress-emitter { transition:none;animation:none!important; }
+  .glass-progress .lg-progress-fiber path { animation-play-state:paused!important; }
+}
+@media (prefers-contrast:more), (forced-colors:active) {
+  .glass-progress .lg-progress-track { backdrop-filter:none;border:1px solid CanvasText;background:Canvas;box-shadow:none; }
+  .glass-progress .lg-progress-fill { background:Highlight;forced-color-adjust:none; }
+  .glass-progress .lg-progress-emitter,.glass-progress .lg-progress-fiber,.glass-progress .lg-optic-rim { display:none; }
+}

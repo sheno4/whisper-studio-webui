@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 
 import type { ModelPreparationState, ToastEvent } from '../../shared/types';
 import Icon from '../components/Icon';
-import { GlassButton, GlassSurface } from '../glass';
+import { GlassButton, GlassSurface, GlassProgress } from '../glass';
 import { useDialogInteraction } from '../hooks/useDialogInteraction';
 import type { WhisperWorkspaceController } from '../hooks/useWhisperWorkspace';
 import { formatDateTime, normalizeUiText } from '../utils';
@@ -20,6 +20,7 @@ export function SystemPanel({ workspace, onClose, onPreferences }: SystemPanelPr
   const [error, setError] = useState('');
   const [requested, setRequested] = useState<ModelPreparationState>();
   const inFlight = useRef(false);
+  const visiblePreparations=useRef(new Set<string>());
   const titleId = useId();
   useDialogInteraction(panelRef, { onDismiss: onClose, initialFocusRef: closeRef });
   const snapshot = workspace.snapshot!;
@@ -32,7 +33,8 @@ export function SystemPanel({ workspace, onClose, onPreferences }: SystemPanelPr
   const states = requested && !snapshot.modelPreparations?.some((item) => item.id === requested.id)
     ? [...(snapshot.modelPreparations ?? []), requested] : snapshot.modelPreparations ?? [];
   const selected = [...states].reverse().find((item) => item.pythonPath === settings.pythonPath && item.engine === settings.transcriptionEngine && item.model === selectedModel);
-  const visible = states.filter((item) => ['preparing', 'queued'].includes(item.status));
+  for(const item of states)if(item.status==='queued'||item.status==='preparing')visiblePreparations.current.add(item.id);
+  const visible = states.filter((item) => ['preparing', 'queued'].includes(item.status)||item.status==='ready'&&visiblePreparations.current.has(item.id));
   if (selected && !visible.some((item) => item.id === selected.id)) visible.push(selected);
 
   async function action(operation: () => Promise<unknown>): Promise<void> {
@@ -47,11 +49,11 @@ export function SystemPanel({ workspace, onClose, onPreferences }: SystemPanelPr
 
   return (
     <div className="studio-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="studio-modal studio-system" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={panelRef} tabIndex={-1}>
-        <GlassSurface className="studio-modal-heading" radius={0}>
+      <GlassSurface className="studio-modal studio-system" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={panelRef} tabIndex={-1}>
+        <header className="studio-modal-heading">
           <div><p className="studio-eyebrow">运行状态</p><h2 id={titleId}>一切都在这里</h2><p>最近检查：{formatDateTime(environment.checkedAt)}</p></div>
           <button ref={closeRef} aria-label="关闭系统状态" className="studio-icon-button studio-button" onClick={onClose} type="button"><Icon name="close" /></button>
-        </GlassSurface>
+        </header>
         <div className="studio-modal-body">
           <div className="studio-system-summary"><span>{environment.items.filter((item) => item.ok).length} / {environment.items.length} 项可用</span><GlassButton disabled={pending} onClick={() => void action(() => workspace.reload())}><Icon name="retry" size={16} />{pending ? '正在检查…' : '重新检查'}</GlassButton></div>
           <div className="studio-check-list">
@@ -66,10 +68,11 @@ export function SystemPanel({ workspace, onClose, onPreferences }: SystemPanelPr
             {!selected ? <div className="studio-model-row"><div><strong>{settings.whisperModel}</strong><p>首次转写会自动准备，也可以现在下载。</p></div><GlassButton disabled={pending} onClick={() => void action(async () => setRequested(await window.whisperWeb.prepareModel()))}>准备模型</GlassButton></div> : null}
             {visible.map((item) => {
               const active = item.status === 'queued' || item.status === 'preparing';
-              const value = active && Number.isFinite(item.percent) ? Math.max(0, Math.min(100, item.percent!)) : undefined;
+              const ready=item.status==='ready';
+              const value = ready ? 100 : active && Number.isFinite(item.percent) ? Math.max(0, Math.min(100, item.percent!)) : undefined;
               return <article className="studio-model-row" key={item.id}>
                 <div><strong>{item.model}</strong><small>{item.engine} · {{ queued: '等待准备', preparing: '正在下载', ready: '已就绪', failed: '准备失败', cancelled: '已取消' }[item.status]}</small><p>{normalizeUiText(item.error || item.message)}</p>
-                  {active ? <div className="studio-model-progress" role="progressbar" aria-label={`${item.model} 模型准备进度`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={value} aria-valuetext={value === undefined ? item.message : `${value}%`}><span style={{ transform: `scaleX(${(value ?? 0) / 100})` }} /></div> : null}
+                  {active||ready ? <GlassProgress size="compact" label={`${item.model} 模型准备进度`} value={value} caption={ready?'模型已就绪':'模型准备'} displayValue={ready?undefined:value===undefined?'进度待确认':`${Math.round(value)}%`} valueText={ready?'100% · 已完成':value===undefined?item.message:`${value}%`} active={active}/> : null}
                 </div>
                 {active ? <GlassButton disabled={pending} onClick={() => void action(async () => { if (!await window.whisperWeb.cancelModelPreparation(item.id)) throw new Error('状态已更新，请重新检查。'); })}>取消</GlassButton> : item.status === 'failed' || item.status === 'cancelled' ? <GlassButton disabled={pending} onClick={() => void action(async () => setRequested(await window.whisperWeb.prepareModel()))}>重试</GlassButton> : null}
               </article>;
@@ -77,8 +80,8 @@ export function SystemPanel({ workspace, onClose, onPreferences }: SystemPanelPr
             {error || workspace.loadError ? <p className="studio-error" role="alert">{normalizeUiText(error || workspace.loadError)}</p> : null}
           </section>
         </div>
-        <GlassSurface className="studio-modal-footer" radius={0}><p>模型在后台准备，完成后等待中的任务会自动继续。</p><GlassButton onClick={onPreferences}>打开偏好设置</GlassButton></GlassSurface>
-      </div>
+        <footer className="studio-modal-footer"><p>模型在后台准备，完成后等待中的任务会自动继续。</p><GlassButton onClick={onPreferences}>打开偏好设置</GlassButton></footer>
+      </GlassSurface>
     </div>
   );
 }
@@ -90,18 +93,18 @@ export function Confirmation({ workspace }: { workspace: WhisperWorkspaceControl
   const request = workspace.confirmation!;
   useDialogInteraction(panelRef, { onDismiss: workspace.dismissConfirmation, canDismiss: !workspace.confirming, initialFocusRef: cancelRef });
   return <div className="studio-modal-backdrop studio-confirm-backdrop" onClick={(event) => { if (event.target === event.currentTarget && !workspace.confirming) workspace.dismissConfirmation(); }}>
-    <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="studio-modal studio-confirm" ref={panelRef} tabIndex={-1}>
+    <GlassSurface role="dialog" aria-modal="true" aria-labelledby={titleId} className="studio-modal studio-confirm" ref={panelRef} tabIndex={-1}>
       <span className={request.tone === 'danger' ? 'studio-danger' : 'studio-muted'}><Icon name={request.tone === 'danger' ? 'trash' : 'info'} size={32} /></span>
       <h2 id={titleId}>{request.title}</h2><p>{request.message}</p>
       <div className="studio-confirm-actions"><button ref={cancelRef} className="studio-button" disabled={workspace.confirming} onClick={workspace.dismissConfirmation} type="button">取消</button><GlassButton className={request.tone === 'danger' ? 'studio-destructive' : 'studio-primary'} disabled={workspace.confirming} onClick={() => void workspace.confirmAction()}>{workspace.confirming ? '正在处理…' : request.confirmLabel}</GlassButton></div>
-    </div>
+    </GlassSurface>
   </div>;
 }
 
 export function Notifications({ toasts }: { toasts: ToastEvent[] }): React.JSX.Element {
   return <div className="studio-notifications" aria-live="polite" aria-atomic="false">
-    {toasts.slice(-4).map((item) => <article className={`studio-notification studio-notification--${item.tone}`} key={item.id} role={item.tone === 'error' ? 'alert' : 'status'}>
+    {toasts.slice(-4).map((item) => <GlassSurface as="section" className={`studio-notification studio-notification--${item.tone}`} key={item.id} role={item.tone === 'error' ? 'alert' : 'status'}>
       <Icon name={item.tone === 'success' ? 'check' : item.tone === 'warning' || item.tone === 'error' ? 'warning' : 'info'} size={19} /><div><strong>{normalizeUiText(item.title)}</strong><p>{normalizeUiText(item.message)}</p></div>
-    </article>)}
+    </GlassSurface>)}
   </div>;
 }

@@ -1,0 +1,11 @@
+{
+  "name": "@lens/design-system",
+  "version": "1.1.0-showcase.1",
+  "description": "Portable Lens material, motion, semantic controls and original interaction audio",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {".": {"types":"./index.d.ts","import":"./index.js"}, "./tokens":"./tokens.js", "./tokens.css":"./tokens.css", "./components.css":"./components.css"},
+  "sideEffects": ["*.css"],
+  "files": ["*.js","*.css","*.d.ts","tokens.json","build-tokens.mjs","internal","README.md","SCOPE.md","CONTEXT.md","DESIGN.md","INTERACTIONS.md","SHOWCASE.md","COMPONENTS.md","examples","index.html"]
+}

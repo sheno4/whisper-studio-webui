@@ -1,0 +1,61 @@
+/* Stable control metrics stay fixed while the browser composites materials. */
+:root { --control-height:44px;--control-radius:14px;--control-gap:8px;--control-menu-radius:18px; }
+/* Absolute children start at a positioned parent's padding edge. The panel
+   border is 1px, so its painted frost must extend to the same outer box.
+   Import's title bar has only a bottom border. */
+.glass-surface > .glass-surface__frost { inset:-1px; }
+.studio-import-header > .glass-surface__frost { inset:0 0 -1px; }
+/* Keep the semantic button's text and icon group inside its content box;
+   decorative material siblings must never take part in its flex sizing. */
+.glass-button > .glass-button__content,
+.glass-menu-trigger > .glass-menu-trigger__content { min-inline-size:0;max-inline-size:100%; }
+html { scrollbar-gutter:stable;overscroll-behavior:none; }
+.workbench-activity-pane .workbench-activity,
+.workbench-input-pane .studio-import-form,
+.glass-select-list,.glass-action-menu-content { scrollbar-gutter:stable; }
+/* Keep actual browser scrollbars on both axes. These rules never turn a
+   naturally wide reading surface into a clipped or simulated scroller. */
+:where(html,.workbench-reading-scroll,.workbench-activity,.studio-import-form,.prefs-scroll,.prefs-tabs,.studio-modal-body,.glass-select-list,.glass-action-menu-content,.lg-card-list-viewport) {
+  scrollbar-width:thin;
+  scrollbar-color:color-mix(in srgb,var(--muted) 48%,transparent) transparent;
+}
+:is(.workbench-reading-scroll,.studio-import-form,.prefs-scroll,.prefs-tabs,.studio-modal-body,.glass-select-list,.glass-action-menu-content,.lg-card-list-viewport),
+.workbench-activity-pane .workbench-activity,.workbench-input-pane .studio-import-form { overscroll-behavior:none; }
+@supports selector(::-webkit-scrollbar) {
+  :where(html,.workbench-reading-scroll,.workbench-activity,.studio-import-form,.prefs-scroll,.prefs-tabs,.studio-modal-body,.glass-select-list,.glass-action-menu-content,.lg-card-list-viewport) {
+    scrollbar-width:auto;scrollbar-color:auto;
+  }
+  :where(html,.workbench-reading-scroll,.workbench-activity,.studio-import-form,.prefs-scroll,.prefs-tabs,.studio-modal-body,.glass-select-list,.glass-action-menu-content,.lg-card-list-viewport)::-webkit-scrollbar { width:10px;height:10px; }
+  :where(html,.workbench-reading-scroll,.workbench-activity,.studio-import-form,.prefs-scroll,.prefs-tabs,.studio-modal-body,.glass-select-list,.glass-action-menu-content,.lg-card-list-viewport)::-webkit-scrollbar-track { background:transparent; }
+  :where(html,.workbench-reading-scroll,.workbench-activity,.studio-import-form,.prefs-scroll,.prefs-tabs,.studio-modal-body,.glass-select-list,.glass-action-menu-content,.lg-card-list-viewport)::-webkit-scrollbar-thumb {
+    min-width:32px;min-height:32px;border:3px solid transparent;border-radius:999px;
+    background:color-mix(in srgb,var(--muted) 48%,transparent);background-clip:padding-box;
+  }
+  :where(html,.workbench-reading-scroll,.workbench-activity,.studio-import-form,.prefs-scroll,.prefs-tabs,.studio-modal-body,.glass-select-list,.glass-action-menu-content,.lg-card-list-viewport)::-webkit-scrollbar-corner { background:transparent; }
+}
+.workbench-material-control { min-inline-size:112px; }
+.glass-select-trigger,.workbench-input-pane .glass-select-trigger,
+.workbench-activity-filter .glass-select-trigger { min-height:var(--control-height);border-radius:var(--control-radius);padding:10px 12px; }
+.glass-select-popup,.glass-action-menu { border-radius:var(--control-menu-radius); }
+.glass-slider-host { display:grid;gap:8px;min-width:0; }
+.glass-slider-host .lg-slider { font-size:13px; }
+.glass-slider-host .lg-slider-heading { align-items:center;min-height:20px; }
+.glass-slider-host .lg-slider-heading > span { min-width:0;font-weight:550; }
+.glass-slider-host .lg-slider-heading output { flex:none;min-inline-size:4ch;text-align:end;color:var(--muted); }
+.glass-slider-host .lg-slider-wrap { isolation:isolate;overflow:visible; }
+.glass-slider-host .lg-slider input { min-height:42px;padding:0;border:0;border-radius:999px;background:transparent;box-shadow:none;-webkit-tap-highlight-color:transparent; }
+.glass-slider-host .lg-slider input::-webkit-slider-runnable-track { background:transparent; }
+.glass-slider-host .lg-slider input::-moz-range-track { background:transparent; }
+.glass-slider-host .lg-slider-track { position:absolute;z-index:0;pointer-events:none;left:12px;right:12px;top:18px;height:6px;border-radius:999px;background:linear-gradient(to right,color-mix(in srgb,var(--accent) 82%,transparent) var(--lg-range-fill,50%),color-mix(in srgb,var(--muted) 24%,transparent) var(--lg-range-fill,50%));box-shadow:inset 0 1px 2px rgb(0 0 0 / .1); }
+.glass-slider-host .lg-slider input { z-index:2; }
+.glass-slider-host .lg-slider-thumb { z-index:1;inline-size:24px;block-size:24px;border-radius:999px;backdrop-filter:none; }
+.glass-slider-host[data-glass-mode='optical'] .lg-slider-thumb { background:transparent;box-shadow:none; }
+.glass-slider-host .lg-slider:has(input:disabled) { opacity:.45; }
+.glass-slider-host .lg-slider input:disabled { cursor:default; }
+.glass-slider-host .lg-slider input:focus-visible { outline:2px solid var(--accent);outline-offset:3px; }
+.glass-slider-hint { margin:0;font-size:12px;line-height:1.6;color:var(--muted); }
+@media (prefers-contrast:more),(forced-colors:active) {
+  .glass-slider-host .lg-slider-track { background:linear-gradient(to right,Highlight var(--lg-range-fill,50%),Canvas var(--lg-range-fill,50%));border:1px solid ButtonText; }
+  .glass-slider-host .lg-slider-thumb { background:ButtonText;outline:1px solid Canvas;box-shadow:none; }
+  .glass-slider-host .lg-slider input:focus-visible { outline-color:Highlight; }
+}

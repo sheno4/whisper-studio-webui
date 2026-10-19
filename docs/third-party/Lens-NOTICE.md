@@ -1,5 +1,11 @@
 # Lens Design System
 
+Current frontend: the complete unmodified portable package is in
+`src/renderer/vendor/lens-native/` at commit
+`7a424c93b9be13cf835b91ea67495fec2ec0584e`, including its root MIT license,
+`SHA256SUMS` and `UPSTREAM.md`. Its actual runtime, shaders, components and CSS
+are active. The following older paths describe the previous extracted adapter.
+
 Copyright (c) 2026 DayDreamInAReverie. Licensed under MIT.
 
 Whisper Studio directly includes the Lens runtime from

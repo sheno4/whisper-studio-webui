@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 
 import type { ModelPreparationState, SettingsData } from '../../../shared/types';
 import Icon from '../../components/Icon';
-import { GlassButton } from '../../glass';
+import { GlassButton, GlassProgress } from '../../glass';
 import { normalizeUiText } from '../../utils';
 
 interface ModelDownloadsProps {
@@ -24,10 +24,12 @@ export default function ModelDownloads({ settings, preparations, unsavedSelectio
   const [pending, setPending] = useState<string>();
   const [error, setError] = useState('');
   const actionLock = useRef(false);
+  const visiblePreparations=useRef(new Set<string>());
   const states = requested && !preparations.some((state) => state.id === requested.id) ? [...preparations, requested] : preparations;
   const normalizedModel = settings.transcriptionEngine === 'whisper.cpp' ? ({ large: 'large-v3', turbo: 'large-v3-turbo' }[settings.whisperModel] || settings.whisperModel) : settings.whisperModel;
   const selected = [...states].reverse().find((state) => state.pythonPath === settings.pythonPath && state.engine === settings.transcriptionEngine && state.model === normalizedModel);
-  const visible = states.filter(isActive);
+  for(const state of states)if(isActive(state))visiblePreparations.current.add(state.id);
+  const visible = states.filter(state=>isActive(state)||state.status==='ready'&&visiblePreparations.current.has(state.id));
   if (selected && !visible.some((state) => state.id === selected.id)) visible.push(selected);
 
   const prepare = async (): Promise<void> => {
@@ -55,13 +57,13 @@ export default function ModelDownloads({ settings, preparations, unsavedSelectio
     <header className="prefs-models-title"><div><strong>模型下载</strong><small>在后台准备，任务自动等待就绪。</small></div><GlassButton className="prefs-button" disabled={Boolean(pending) || (!unsavedSelection && Boolean(selected && isActive(selected)))} onClick={() => void prepare()} type="button"><Icon name="download" size={15} />{pending === 'prepare' ? '正在请求…' : unsavedSelection ? '保存并准备模型' : selected?.status === 'failed' || selected?.status === 'cancelled' ? '重新准备模型' : '准备模型'}</GlassButton></header>
     {unsavedSelection ? <p className="prefs-note">下面显示已保存配置的状态；准备新模型时会同时保存当前设置。</p> : null}
     {visible.length ? <div className="prefs-model-list">{visible.map((state) => {
-      const percent = state.percent !== undefined && Number.isFinite(state.percent) ? Math.max(0, Math.min(100, state.percent)) : undefined;
+      const ready=state.status==='ready';
+      const percent = ready ? 100 : state.percent !== undefined && Number.isFinite(state.percent) ? Math.max(0, Math.min(100, state.percent)) : undefined;
       const hasBytes = state.downloadedBytes !== undefined && Number.isFinite(state.downloadedBytes) && state.downloadedBytes >= 0;
       return <article className="prefs-model" key={state.id}>
         <div className="prefs-model-title"><span><strong>{state.model}</strong><small>{state.engine}</small></span><span className={`prefs-status prefs-status-${state.status}`}>{labels[state.status]}</span>{isActive(state) ? <button className="prefs-text-button" disabled={Boolean(pending)} onClick={() => void cancel(state)} type="button">{pending === state.id ? '取消中…' : '取消下载'}</button> : null}</div>
-        <p className={state.status === 'failed' ? 'prefs-error' : ''}>{normalizeUiText(state.error || state.message)}</p>
-        {isActive(state) ? <div aria-label={`${state.model} 准备进度`} aria-valuemax={100} aria-valuemin={0} aria-valuenow={percent} aria-valuetext={percent === undefined ? '正在准备，进度待确认' : `${Math.round(percent)}%`} className="prefs-progress" role="progressbar"><span style={{ transform: `scaleX(${percent === undefined ? 0 : percent / 100})` }} /></div> : null}
-        {isActive(state) && (percent !== undefined || hasBytes) ? <small className="prefs-note">{[percent !== undefined ? `${percent.toFixed(1)}%` : '', hasBytes ? `${bytes(state.downloadedBytes!)}${state.totalBytes && state.totalBytes > 0 ? ` / ${bytes(state.totalBytes)}` : ' 已下载'}` : ''].filter(Boolean).join(' · ')}</small> : null}
+        <p className={state.status === 'failed' ? 'prefs-error' : ''} title={normalizeUiText(state.error || state.message)}>{normalizeUiText(state.error || state.message)}</p>
+        {isActive(state)||ready ? <GlassProgress label={`${state.model} 准备进度`} value={percent} caption={hasBytes?`${bytes(state.downloadedBytes!)}${state.totalBytes&&state.totalBytes>0?` / ${bytes(state.totalBytes)}`:' 已下载'}`:ready?'模型已就绪':'正在准备'} displayValue={ready?undefined:percent===undefined?'进度待确认':`${percent.toFixed(1)}%`} valueText={ready?'100% · 已完成':percent===undefined?'正在准备，进度待确认':`${Math.round(percent)}%`} active={isActive(state)}/> : null}
       </article>;
     })}</div> : <p className="prefs-note">当前配置：{settings.transcriptionEngine} · {settings.whisperModel}。尚未收到准备状态。</p>}
     {error ? <p className="prefs-error" role="alert">{error}</p> : null}

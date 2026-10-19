@@ -14,6 +14,7 @@ const validate = (label, options) => {
   if (typeof label !== 'string' || !label.trim()) throw new TypeError('A non-empty accessible label is required');
   if (!options.length || new Set(options.map(option => option.value)).size !== options.length || options.some(option => typeof option.value !== 'string' || typeof option.label !== 'string' || !option.label.trim())) throw new TypeError('Use unique string option values and non-empty labels');
 };
+const attr=(element,name,value)=>{if(value===undefined){if(element.hasAttribute(name))element.removeAttribute(name);}else if(element.getAttribute(name)!==String(value))element.setAttribute(name,String(value));};
 
 export function createSegmentedControl({label, options = [], value, disabled = false, panelIds = {}, onChange = () => {}} = {}) {
   validate(label, options);
@@ -29,37 +30,43 @@ export function createSegmentedControl({label, options = [], value, disabled = f
   bar.append(indicator); element.append(bar);
   const available = () => entries.filter(({button}) => !button.matches(':disabled') && button.getAttribute('aria-disabled') !== 'true');
   const sync = (detail = {}) => element.dispatchEvent(new CustomEvent('lg:sync', {bubbles: true, detail}));
+  let alignedX=-1,alignedWidth=-1;
   const align = (detail = {}) => {
     const button = entries.find(entry => entry.option.value === current)?.button;
     if (!button || destroyed) return;
-    indicator.style.width = `${button.offsetWidth}px`;
-    indicator.style.setProperty('--lg-segment-x', `${button.offsetLeft}px`);
-    sync(detail);
+    // Jelly owns the presentation width after mounting. A label/count update
+    // must never replace the held lens's current fit behind the pointer.
+    const x=button.offsetLeft,width=button.offsetWidth,changed=x!==alignedX||width!==alignedWidth;
+    if(!indicator.hasAttribute('data-jelly')&&indicator.style.width!==`${width}px`)indicator.style.width = `${width}px`;
+    if(indicator.style.getPropertyValue('--lg-segment-x')!==`${x}px`)indicator.style.setProperty('--lg-segment-x', `${x}px`);
+    alignedX=x;alignedWidth=width;if(changed||detail.snap||detail.cancel)sync(detail);
   };
   const setValue = (next, {emit = false, snap = false, cancel = false, force = false} = {}) => {
     const entry = entries.find(entry => entry.option.value === next);
     if (!entry || (!force && (groupDisabled || entry.button.matches(':disabled')))) return false;
     const changed = current !== next;
-    current = next; element.dataset.value = current;
+    current = next;if(element.dataset.value!==current)element.dataset.value = current;
     for (const {option, button} of entries) {
       const selected = option.value === current;
-      button.tabIndex = selected && !button.disabled ? 0 : -1;
-      button.setAttribute('aria-selected', String(selected));
+      const tabIndex=selected&&!button.disabled?0:-1;if(button.tabIndex!==tabIndex)button.tabIndex=tabIndex;
+      attr(button,'aria-selected',String(selected));
     }
     // If a selected tab is unavailable, an enabled tab remains keyboard reachable.
-    if (!entries.some(({button}) => button.tabIndex === 0)) available()[0]?.button.setAttribute('tabindex', '0');
+    if (!entries.some(({button}) => button.tabIndex === 0)){const first=available()[0]?.button;if(first)attr(first,'tabindex','0');}
     align({snap, cancel});
     if (changed && emit) onChange(current);
     return true;
   };
   const paintEntry = (entry, option, nextPanelIds) => {
     entry.option = {...option};
-    entry.copy.textContent = option.label;
-    entry.button.disabled = groupDisabled || Boolean(option.disabled);
-    entry.badge.hidden = option.badge === undefined || option.badge === null;
-    entry.badge.textContent = entry.badge.hidden ? '' : String(option.badge);
+    if(entry.copy.textContent!==option.label)entry.copy.textContent = option.label;
+    const disabled=groupDisabled||Boolean(option.disabled);if(entry.button.disabled!==disabled)entry.button.disabled=disabled;
+    const hidden=option.badge===undefined||option.badge===null;if(entry.badge.hidden!==hidden)entry.badge.hidden=hidden;
+    const text=hidden?'':typeof option.badge==='number'&&option.badge>99?'99+':String(option.badge);
+    if(entry.badge.textContent!==text)entry.badge.textContent=text;
+    attr(entry.badge,'title',hidden?undefined:String(option.badge));
     const panel = nextPanelIds?.[option.value];
-    if (panel) entry.button.setAttribute('aria-controls', panel); else entry.button.removeAttribute('aria-controls');
+    attr(entry.button,'aria-controls',panel||undefined);
   };
   for (const option of options) {
     const button = node('button', 'lg-segment-option'), copy = node('span', 'lg-segment-label'), badge = node('span', 'lg-segment-badge');
@@ -71,6 +78,7 @@ export function createSegmentedControl({label, options = [], value, disabled = f
     bar.append(button);
   }
   bar.setAttribute('aria-disabled', String(groupDisabled));
+  bar.dataset.hasBadges=String(options.some(option=>option.badge!==undefined&&option.badge!==null));
   bar.addEventListener('keydown', event => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey || groupDisabled) return;
     const enabled = available(); if (!enabled.length) return;
@@ -83,7 +91,11 @@ export function createSegmentedControl({label, options = [], value, disabled = f
   element.addEventListener('lg:set', event => {
     if (event.target === element) setValue(event.detail.value, {emit: Boolean(event.detail.emit)});
   }, {signal});
-  const observer = new ResizeObserver(() => align()); observer.observe(bar);
+  // Container/label geometry must not animate like a selection change. The
+  // motion runtime ignores this snap while held, preserving the live gesture.
+  const observer = new ResizeObserver(() => align({snap: true})); observer.observe(bar);
+  // Content-sized slots can resize while the overall rail remains unchanged.
+  for(const {button} of entries)observer.observe(button);
   setValue(current, {force: true, snap: true});
   return {
     element,
@@ -94,7 +106,7 @@ export function createSegmentedControl({label, options = [], value, disabled = f
       if (nextOptions.length !== entries.length || nextOptions.some((option, index) => option.value !== entries[index].option.value)) throw new TypeError('Recreate the control when option identities change');
       const availabilityChanged = groupDisabled !== nextDisabled || nextOptions.some((option, index) => Boolean(option.disabled) !== Boolean(entries[index].option.disabled));
       label = nextLabel; options = nextOptions; panelIds = nextPanelIds; groupDisabled = nextDisabled;
-      bar.setAttribute('aria-label', label); bar.setAttribute('aria-disabled', String(groupDisabled));
+      attr(bar,'aria-label',label);attr(bar,'aria-disabled',String(groupDisabled));attr(bar,'data-has-badges',String(options.some(option=>option.badge!==undefined&&option.badge!==null)));
       entries.forEach((entry, index) => paintEntry(entry, options[index], panelIds));
       setValue(current, {force: true, cancel: availabilityChanged});
     },

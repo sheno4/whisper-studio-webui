@@ -2,6 +2,8 @@
 // 7a424c93b9be13cf835b91ea67495fec2ec0584e (MIT; see ./LICENSE).
 // Original switch DOM and lg:set/lg:sync protocol are preserved. Integration
 // additions: controlled snap/cancel, inherited disabled state and unmount signal.
+// Its single Jelly body additionally consumes the pinned IshiakiZ switch lift,
+// asymptotic edge band and directional release calculation (../ishiakiz).
 const accessibleLabel = label => {
   if (typeof label !== 'string' || !label.trim()) throw new TypeError('A non-empty accessible label is required');
   return label;

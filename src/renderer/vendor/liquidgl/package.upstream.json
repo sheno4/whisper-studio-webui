@@ -1,0 +1,38 @@
+{
+  "name": "liquid-gl",
+  "version": "3.0.0",
+  "description": "Liquid Glass - Powered by WebGPU/WebGL.",
+  "type": "module",
+  "main": "./liquidGL.js",
+  "module": "./liquidGL.js",
+  "exports": {
+    ".": {
+      "import": "./liquidGL.js",
+      "default": "./liquidGL.js"
+    },
+    "./liquidGL-helper.js": {
+      "import": "./liquidGL-helper.js",
+      "default": "./liquidGL-helper.js"
+    }
+  },
+  "files": [
+    "liquidGL.js",
+    "liquidGL-helper.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "glassmorphism",
+    "liquid-glass",
+    "webgl",
+    "canvas",
+    "refraction",
+    "shader"
+  ],
+  "author": "NaughtyDuk",
+  "license": "MIT",
+  "homepage": "https://liquidgl.naughtyduk.com",
+  "publishConfig": {
+    "access": "public"
+  }
+}

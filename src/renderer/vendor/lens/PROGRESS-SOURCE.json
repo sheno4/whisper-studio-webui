@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/ruiqichenbiec/design-systems",
+  "licenseSha256": "709601b8d813040a6e76ae41c3e797611c1a13e80448700904651e6f122bb30f",
+  "retainedPath": "upstream/optical-progress.js.txt",
+  "sourceLines": "1-97",
+  "source": "lens/lab/design-system/optical-components.js",
+  "retainedSha256": "b92bf9e23e2b8190e17eb228e5af20d1dd3fca80bd3d2d50260e634921139fa8",
+  "license": "MIT",
+  "revision": "7a424c93b9be13cf835b91ea67495fec2ec0584e"
+}
