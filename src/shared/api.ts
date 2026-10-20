@@ -21,6 +21,7 @@ export interface WhisperWebApi {
   retryTask: (taskId: string) => Promise<boolean>;
   cancelTask: (taskId: string) => Promise<boolean>;
   removeTask: (taskId: string) => Promise<boolean>;
+  deleteTask: (taskId: string) => Promise<boolean>;
   deleteTaskDirectory: (taskId: string) => Promise<boolean>;
   openOutputDir: (taskId: string) => Promise<boolean>;
   openSourceLocation: (taskId: string) => Promise<boolean>;

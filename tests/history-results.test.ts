@@ -192,11 +192,11 @@ test('complete history results persist independently of the queue and safely rec
     await restarted.cleanupStorage();
     assert.ok(fs.existsSync(upload));
     await restarted.clearHistory();
-    assert.ok(fs.existsSync(upload));
+    assert.equal(fs.existsSync(upload), false);
     assert.ok(fs.existsSync(outputMedia));
   });
 
-  await t.test('deleting outputs preserves cached content and clearing history only removes result caches', async (subtest) => {
+  await t.test('deleting task data removes the task and archived result together, while clearing history preserves outputs', async () => {
     const directory = path.join(root, 'outputs', 'delete-output');
     fs.mkdirSync(directory, { recursive: true });
     const task = taskFixture('delete-output');
@@ -204,18 +204,14 @@ test('complete history results persist independently of the queue and safely rec
     task.outputFiles.transcriptTxt = path.join(directory, 'result.txt');
     fs.writeFileSync(task.outputFiles.transcriptTxt, task.transcriptText!);
     const manager = new TaskManager() as any;
-    subtest.mock.method(manager, 'appendTaskLog', () => {});
     manager.tasks.push(task);
     manager.finalizeHistory(task);
-    const before = structuredClone(task);
     assert.equal(await manager.deleteTaskDirectory(task.id), true);
-    const saved = manager.getHistoryResult(task.id);
-    assert.equal(saved.transcriptText, before.transcriptText);
-    assert.equal(saved.translationText, before.translationText);
-    assert.deepEqual(saved.logs, before.logs);
-    assert.equal(saved.outputDir, undefined);
-    assert.deepEqual(saved.outputFiles, {});
-    assert.equal(manager.getSnapshot().history.find((item: HistoryRecord) => item.id === task.id).outputDir, undefined);
+    assert.equal(manager.getHistoryResult(task.id), undefined);
+    assert.equal(storage.readTaskResult(task.id), undefined);
+    assert.equal(manager.getSnapshot().tasks.some((item: TaskRecord) => item.id === task.id), false);
+    assert.equal(manager.getSnapshot().history.some((item: HistoryRecord) => item.id === task.id), false);
+    assert.equal(fs.existsSync(directory), false);
     const media = path.join(root, 'keep-media.mp4');
     fs.writeFileSync(media, 'opaque fixture');
     await manager.clearHistory();

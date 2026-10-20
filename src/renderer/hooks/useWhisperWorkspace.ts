@@ -69,6 +69,7 @@ export interface WhisperWorkspaceController {
   isDragging: boolean;
   toasts: ToastEvent[];
   confirmation: ConfirmationRequest | null;
+  confirmationError?: string;
   confirming: boolean;
   setLinkInput: (value: string) => void;
   setTranslateNext: (value: boolean) => void;
@@ -84,7 +85,7 @@ export interface WhisperWorkspaceController {
   pickFiles: () => Promise<void>;
   addDroppedFiles: (files: File[]) => Promise<void>;
   copyText: (text: string, label: string) => Promise<void>;
-  requestDeleteTaskDirectory: (taskId: string) => void;
+  requestDeleteTask: (taskId: string) => void;
   requestClearHistory: () => void;
   dismissConfirmation: () => void;
   confirmAction: () => Promise<void>;
@@ -92,8 +93,6 @@ export interface WhisperWorkspaceController {
   changeTranslationService: (serviceId: string) => Promise<void>;
   retryTask: (taskId: string) => Promise<void>;
   cancelTask: (taskId: string) => Promise<void>;
-  removeTask: (taskId: string) => Promise<void>;
-  removeHistory: (historyId: string) => Promise<void>;
   revealPath: (targetPath: string) => Promise<void>;
   openOutputDirectory: (taskId: string) => Promise<void>;
   openSourceLocation: (taskId: string) => Promise<void>;
@@ -155,7 +154,9 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
   const creatingTaskRef = useRef(false);
   const [savingServiceId, setSavingServiceId] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(null);
+  const [confirmationError, setConfirmationError] = useState<string>();
   const [confirming, setConfirming] = useState(false);
+  const confirmingRef = useRef(false);
   const didHydrateTranslateDefault = useRef(false);
   const { toasts, pushToast } = useToastQueue();
 
@@ -168,7 +169,9 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
     didHydrateTranslateDefault.current = true;
   }, []);
 
-  const { snapshot, loadError, reload, includeCreatedTasks } = useDesktopSnapshot(hydrateTranslateDefault);
+  const { snapshot, loadError, reload, includeCreatedTasks, discardTaskRecords } = useDesktopSnapshot(hydrateTranslateDefault);
+  const latestSnapshot = useRef(snapshot);
+  latestSnapshot.current = snapshot;
   const {
     activityView,
     selectedTaskId,
@@ -322,64 +325,79 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
     [pushToast]
   );
 
-  const requestDeleteTaskDirectory = useCallback(
+  const requestDeleteTask = useCallback(
     (taskId: string): void => {
+      if (confirmingRef.current) return;
+      const currentTask = latestSnapshot.current?.tasks.find(task => task.id === taskId);
+      const record = currentTask ?? latestSnapshot.current?.history.find(item => item.id === taskId);
+      if (!record) return;
+      if (currentTask && isTaskActive(currentTask)) {
+        pushToast({ title: '请先取消任务', message: '任务停止后即可删除，避免正在写入的文件被移除。', tone: 'warning' });
+        return;
+      }
+      setConfirmationError(undefined);
       setConfirmation({
-        title: '删除输出目录？',
-        message: '转写、字幕、日志和下载媒体都会从本机删除，此操作无法撤销。',
-        confirmLabel: '删除目录',
+        title: '删除任务？',
+        message: `“${getReadableName(record)}”\n当前任务、对应历史记录和生成文件将一起删除，包括转写、译文、字幕、日志及下载媒体。\n你导入前的原始文件不会删除。此操作无法撤销。`,
+        confirmLabel: '删除任务',
         tone: 'danger',
         action: async () => {
-          const deleted = await window.whisperWeb.deleteTaskDirectory(taskId);
-          if (!deleted) {
-            pushToast({ title: '未能删除目录', message: '任务仍在运行，或目录已经不存在。', tone: 'warning' });
-            return;
-          }
-          pushToast({ title: '目录已删除', message: '任务输出已从本机移除。', tone: 'success' });
+          const task = latestSnapshot.current?.tasks.find(item => item.id === taskId);
+          if (task && isTaskActive(task)) throw new Error('任务已开始运行。请先取消，待任务停止后再删除。');
+          const deleted = await window.whisperWeb.deleteTask(taskId);
+          if (!deleted) throw new Error('任务仍在运行、正在删除或已经不存在。请刷新后重试。');
+          discardTaskRecords([taskId]);
+          pushToast({ title: '任务已删除', message: '任务、历史记录和生成数据已一起移除。', tone: 'success' });
         }
       });
     },
-    [pushToast]
+    [discardTaskRecords, pushToast]
   );
 
   const requestClearHistory = useCallback((): void => {
-    if (!snapshot || snapshot.history.length === 0) {
+    if (confirmingRef.current || !snapshot || snapshot.history.length === 0) {
       return;
     }
 
+    setConfirmationError(undefined);
     setConfirmation({
-      title: '清空历史记录？',
-      message: `将移除 ${snapshot.history.length} 条历史记录，输出文件仍会保留在原目录。`,
-      confirmLabel: '清空记录',
+      title: '仅清空历史记录？',
+      message: `将清空历史列表（当前 ${snapshot.history.length} 条）。\n当前任务和生成文件都会保留。要同时删除数据，请使用单项的“删除任务”。`,
+      confirmLabel: '仅清空记录',
       tone: 'danger',
       action: async () => {
         await window.whisperWeb.clearHistory();
-        pushToast({ title: '历史记录已清空', message: '输出文件没有被删除。', tone: 'success' });
+        await reload();
+        pushToast({ title: '历史列表已清空', message: '当前任务和生成文件已保留。', tone: 'success' });
       }
     });
-  }, [pushToast, snapshot]);
+  }, [pushToast, reload, snapshot]);
 
   const dismissConfirmation = useCallback((): void => {
-    if (!confirming) {
+    if (!confirmingRef.current) {
       setConfirmation(null);
+      setConfirmationError(undefined);
     }
-  }, [confirming]);
+  }, []);
 
   const confirmAction = useCallback(async (): Promise<void> => {
-    if (!confirmation || confirming) {
+    if (!confirmation || confirmingRef.current) {
       return;
     }
 
+    confirmingRef.current = true;
     setConfirming(true);
+    setConfirmationError(undefined);
     try {
       await confirmation.action();
       setConfirmation(null);
     } catch (error) {
-      pushToast({ title: '操作失败', message: getErrorMessage(error), tone: 'error' }, 4800);
+      setConfirmationError(getErrorMessage(error));
     } finally {
+      confirmingRef.current = false;
       setConfirming(false);
     }
-  }, [confirmation, confirming, pushToast]);
+  }, [confirmation]);
 
   const saveSettings = useCallback(
     async (payload: SaveSettingsPayload): Promise<void> => {
@@ -436,17 +454,6 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
     [runCommand]
   );
 
-  const removeTask = useCallback(
-    (taskId: string): Promise<void> => runCommand('移除任务', () => window.whisperWeb.removeTask(taskId)),
-    [runCommand]
-  );
-
-  const removeHistory = useCallback(
-    (historyId: string): Promise<void> =>
-      runCommand('移除历史记录', () => window.whisperWeb.removeHistoryItem(historyId)),
-    [runCommand]
-  );
-
   const revealPath = useCallback(
     (targetPath: string): Promise<void> => runCommand('定位文件', () => window.whisperWeb.revealPath(targetPath)),
     [runCommand]
@@ -498,6 +505,7 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
     isDragging,
     toasts,
     confirmation,
+    confirmationError,
     confirming,
     setLinkInput,
     setTranslateNext,
@@ -513,7 +521,7 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
     pickFiles,
     addDroppedFiles,
     copyText,
-    requestDeleteTaskDirectory,
+    requestDeleteTask,
     requestClearHistory,
     dismissConfirmation,
     confirmAction,
@@ -521,8 +529,6 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
     changeTranslationService,
     retryTask,
     cancelTask,
-    removeTask,
-    removeHistory,
     revealPath,
     openOutputDirectory,
     openSourceLocation,

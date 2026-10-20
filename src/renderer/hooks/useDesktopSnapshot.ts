@@ -7,6 +7,7 @@ interface DesktopSnapshotController {
   loadError?: string;
   reload: () => Promise<void>;
   includeCreatedTasks: (created: TaskRecord[]) => void;
+  discardTaskRecords: (ids: string[]) => void;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -42,6 +43,12 @@ export function useDesktopSnapshot(
   const snapshotLoaded = useRef(false);
   const serverTaskIds = useRef(new Set<string>());
   const pendingCreatedTasks = useRef(new Map<string, TaskRecord>());
+  const deletedTaskIds = useRef(new Set<string>());
+  const withoutDeletedTasks = useCallback((value: AppSnapshot): AppSnapshot => ({
+    ...value,
+    tasks: value.tasks.filter(task => !deletedTaskIds.current.has(task.id)),
+    history: value.history.filter(record => !deletedTaskIds.current.has(record.id))
+  }), []);
 
   const reload = useCallback(async (): Promise<void> => {
     const revision = stateRevision.current;
@@ -49,7 +56,7 @@ export function useDesktopSnapshot(
     setLoadError(undefined);
 
     try {
-      let nextSnapshot = await window.whisperWeb.getSnapshot();
+      let nextSnapshot = withoutDeletedTasks(await window.whisperWeb.getSnapshot());
       if (revision !== stateRevision.current || request !== requestRevision.current) {
         return;
       }
@@ -63,19 +70,30 @@ export function useDesktopSnapshot(
         setLoadError(getErrorMessage(error));
       }
     }
-  }, [onSnapshotLoaded]);
+  }, [onSnapshotLoaded, withoutDeletedTasks]);
+
+  const discardTaskRecords = useCallback((ids: string[]): void => {
+    stateRevision.current += 1;
+    for (const id of ids) {
+      deletedTaskIds.current.add(id);
+      pendingCreatedTasks.current.delete(id);
+      serverTaskIds.current.delete(id);
+    }
+    setSnapshot(current => current ? withoutDeletedTasks(current) : current);
+  }, [withoutDeletedTasks]);
 
   const includeCreatedTasks = useCallback((created: TaskRecord[]): void => {
     if (created.length === 0) {
       return;
     }
     stateRevision.current += 1;
-    for (const task of created) {
+    const retained = created.filter(task => !deletedTaskIds.current.has(task.id));
+    for (const task of retained) {
       if (!serverTaskIds.current.has(task.id)) {
         pendingCreatedTasks.current.set(task.id, task);
       }
     }
-    setSnapshot((current) => current ? includeMissingTasks(current, created) : current);
+    setSnapshot((current) => current ? includeMissingTasks(current, retained) : current);
     if (!snapshotLoaded.current) {
       void reload();
     }
@@ -84,8 +102,9 @@ export function useDesktopSnapshot(
   useEffect(() => {
     const unsubscribe = window.whisperWeb.onState((streamedSnapshot) => {
       stateRevision.current += 1;
-      serverTaskIds.current = new Set(streamedSnapshot.tasks.map((task) => task.id));
-      const nextSnapshot = includeUnconfirmedTasks(streamedSnapshot, pendingCreatedTasks.current);
+      const currentSnapshot = withoutDeletedTasks(streamedSnapshot);
+      serverTaskIds.current = new Set(currentSnapshot.tasks.map((task) => task.id));
+      const nextSnapshot = includeUnconfirmedTasks(currentSnapshot, pendingCreatedTasks.current);
       snapshotLoaded.current = true;
       setSnapshot(nextSnapshot);
       setLoadError(undefined);
@@ -96,7 +115,7 @@ export function useDesktopSnapshot(
       requestRevision.current += 1;
       unsubscribe();
     };
-  }, [onSnapshotLoaded, reload]);
+  }, [onSnapshotLoaded, reload, withoutDeletedTasks]);
 
-  return { snapshot, loadError, reload, includeCreatedTasks };
+  return { snapshot, loadError, reload, includeCreatedTasks, discardTaskRecords };
 }

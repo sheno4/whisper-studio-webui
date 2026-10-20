@@ -207,6 +207,7 @@ const api: WhisperWebApi = {
   retryTask: async (taskId) => (await request<{ ok: boolean }>(`/api/tasks/${taskId}/retry`, { method: 'POST' })).ok,
   cancelTask: async (taskId) => (await request<{ ok: boolean }>(`/api/tasks/${taskId}/cancel`, { method: 'POST' })).ok,
   removeTask: async (taskId) => (await request<{ ok: boolean }>(`/api/tasks/${taskId}`, { method: 'DELETE' })).ok,
+  deleteTask: async (taskId) => (await request<{ ok: boolean }>(`/api/tasks/${encodeURIComponent(taskId)}/data`, { method: 'DELETE' })).ok,
   deleteTaskDirectory: async (taskId) => (await request<{ ok: boolean }>(`/api/tasks/${taskId}/output`, { method: 'DELETE' })).ok,
   openOutputDir: async (taskId) => (await request<{ ok: boolean }>(`/api/tasks/${taskId}/open-output`, { method: 'POST' })).ok,
   openSourceLocation: async (taskId) => (await request<{ ok: boolean }>(`/api/tasks/${taskId}/open-source`, { method: 'POST' })).ok,

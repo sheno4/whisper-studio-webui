@@ -22,16 +22,29 @@ interface WorkspaceSelectionController {
   focusCreatedTasks: (created: TaskRecord[]) => void;
 }
 
+function adjacentSelection(previous: string[], current: string[], removedId?: string): string | undefined {
+  const index = removedId ? previous.indexOf(removedId) : -1;
+  if (index < 0) return undefined;
+  const available = new Set(current);
+  return previous.slice(index + 1).find(id => available.has(id))
+    ?? previous.slice(0, index).reverse().find(id => available.has(id));
+}
+
 export function useWorkspaceSelection(snapshot: AppSnapshot | null): WorkspaceSelectionController {
   const [activityView, setActivityView] = useState<ActivityView>('queue');
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const [selectedHistoryId, setSelectedHistoryId] = useState<string>();
   const pendingCreatedTaskId = useRef<string | undefined>(undefined);
+  const previousTasks = useRef<string[]>([]);
+  const previousHistory = useRef<string[]>([]);
   const results = useRef(new Map<string, TaskRecord>());
   const [result, setResult] = useState<{ key: string; task?: TaskRecord; error?: string }>({ key: '' });
   const [resultAttempt, setResultAttempt] = useState(0);
 
   useEffect(() => {
+    if (!snapshot) return;
+    const previous = previousTasks.current;
+    previousTasks.current = snapshot.tasks.map(task => task.id);
     if (pendingCreatedTaskId.current !== undefined && pendingCreatedTaskId.current === selectedTaskId) {
       if (!snapshot?.tasks.some((task) => task.id === selectedTaskId)) {
         return;
@@ -42,16 +55,20 @@ export function useWorkspaceSelection(snapshot: AppSnapshot | null): WorkspaceSe
       return;
     }
 
-    const nextTaskId = snapshot.tasks.find(isTaskActive)?.id ?? snapshot.tasks.at(-1)?.id;
+    const nextTaskId = adjacentSelection(previous, previousTasks.current, selectedTaskId)
+      ?? snapshot.tasks.find(isTaskActive)?.id ?? snapshot.tasks.at(-1)?.id;
     setSelectedTaskId(nextTaskId);
   }, [selectedTaskId, snapshot]);
 
   useEffect(() => {
+    if (!snapshot) return;
+    const previous = previousHistory.current;
+    previousHistory.current = snapshot.history.map(record => record.id);
     if (!snapshot || snapshot.history.some((record) => record.id === selectedHistoryId)) {
       return;
     }
 
-    setSelectedHistoryId(snapshot.history[0]?.id);
+    setSelectedHistoryId(adjacentSelection(previous, previousHistory.current, selectedHistoryId) ?? snapshot.history[0]?.id);
   }, [selectedHistoryId, snapshot]);
 
   const selectedTask = snapshot?.tasks.find((task) => task.id === selectedTaskId);

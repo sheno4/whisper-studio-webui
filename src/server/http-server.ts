@@ -249,6 +249,9 @@ export const createWebServer = (taskManager: TaskManager, options: WebServerOpti
   app.delete('/api/tasks/:taskId/output', asyncRoute(async (request, response) => {
     response.json({ ok: await taskManager.deleteTaskDirectory(routeParam(request, 'taskId')) });
   }));
+  app.delete('/api/tasks/:taskId/data', asyncRoute(async (request, response) => {
+    response.json({ ok: await taskManager.deleteTask(routeParam(request, 'taskId')) });
+  }));
   app.post('/api/tasks/:taskId/open-output', asyncRoute(async (request, response) => {
     response.json({ ok: await taskManager.openOutputDir(routeParam(request, 'taskId')) });
   }));

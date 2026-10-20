@@ -4,7 +4,7 @@ import { createComponent, type MenuHandle } from '../../vendor/lens-native/index
 import { releaseLensRoot, scheduleLensMount } from '../../lens/Runtime';
 import { bindLensMenuPopover } from '../../glass/lens-menu-adapter';
 
-interface ActionMenuProps { label: ReactNode; ariaLabel?: string; className?: string; children: ReactNode }
+interface ActionMenuProps { label: ReactNode; ariaLabel?: string; className?: string; disabled?: boolean; children: ReactNode }
 type MenuNodes = { instance: MenuHandle; trigger: HTMLButtonElement; label: HTMLElement; panel: HTMLElement };
 
 /** Preserve every original React native button, callback and export group.
@@ -27,7 +27,7 @@ function menuItems(nodes: ReactNode, close: () => void): ReactNode {
 
 /** The original menu factory supplies its trigger, surface and open/close
  * lifecycle. A thin semantic adapter lets its popup contain grouped JSX. */
-export default function ActionMenu({ label, ariaLabel, className = '', children }: ActionMenuProps): React.JSX.Element {
+export default function ActionMenu({ label, ariaLabel, className = '', disabled = false, children }: ActionMenuProps): React.JSX.Element {
   const host = useRef<HTMLSpanElement>(null), control = useRef<MenuNodes | null>(null);
   const [nodes, setNodes] = useState<MenuNodes | null>(null);
   const latest = useRef({ ariaLabel, className }); latest.current = { ariaLabel, className };
@@ -72,7 +72,9 @@ export default function ActionMenu({ label, ariaLabel, className = '', children 
     const current = control.current; if (!current) return;
     current.trigger.className = `lg-surface lg-button studio-menu-trigger glass-menu-trigger ${className}`.trim();
     current.trigger.setAttribute('aria-label', ariaLabel || '操作菜单'); current.panel.setAttribute('aria-label', ariaLabel || '操作菜单');
-  }, [nodes, ariaLabel, className]);
+    current.trigger.disabled = disabled;
+    if (disabled) current.instance.close();
+  }, [nodes, ariaLabel, className, disabled]);
   return <span ref={host} className="glass-action-menu-host" data-glass-source="lens-native">
     {nodes ? createPortal(label, nodes.label) : null}
     {nodes ? createPortal(<div className="glass-action-menu-content">{menuItems(children, () => { if (control.current === nodes) nodes.instance.close(); })}</div>, nodes.panel) : null}

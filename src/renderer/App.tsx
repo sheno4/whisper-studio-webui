@@ -49,22 +49,6 @@ function App(): React.JSX.Element {
     window.history.replaceState(null, '', routeHash({ kind: 'history', id }));
   }
 
-  function viewContent(id: string, source: 'queue' | 'history'): void {
-    readingPositions.current.set(`${source}:${id}`, 0);
-    if (source === 'history') {
-      if (workspace.activity.view === 'history' && workspace.activity.selectedHistoryId === id && workspace.activity.historyResultError) workspace.reloadHistoryResult();
-      selectHistory(id);
-    } else selectTask(id);
-    // Menu close returns focus to its trigger. Move to the requested result
-    // after that synchronous close, without disturbing normal row selection.
-    queueMicrotask(() => {
-      readingScrollRef.current?.scrollTo({ top: 0, behavior: 'instant' });
-      const result = document.getElementById('workbench-result');
-      result?.focus({ preventScroll: true });
-      if (window.matchMedia('(max-width: 820px)').matches) result?.scrollIntoView({ block: 'start', behavior: 'instant' });
-    });
-  }
-
   useEffect(() => {
     const selectFromLink = (): void => {
       const route = parseStudioRoute(window.location.hash);
@@ -116,6 +100,44 @@ function App(): React.JSX.Element {
   const record = workspace.activity.activeHistoryRecord ?? workspace.activity.activeTask;
   const recordKey = record ? `${workspace.activity.view}:${record.id}` : '';
   const readingContent = useContentTransition({ workspace, hasRecord: Boolean(record) }, recordKey);
+  const retainedWorkspace = readingContent.displayedValue.workspace;
+  const retainedRecord = retainedWorkspace.activity.activeHistoryRecord ?? retainedWorkspace.activity.activeTask;
+  const retainedExists = retainedRecord && (retainedWorkspace.activity.view === 'history'
+    ? snapshot?.history : snapshot?.tasks)?.some(item => item.id === retainedRecord.id);
+  // A transition may retain a different selection, but never a deleted record
+  // or the file actions and callbacks belonging to an obsolete snapshot.
+  const presentedWorkspace = retainedExists ? { ...retainedWorkspace, snapshot } : workspace;
+  const hasPresentedRecord = retainedExists ? readingContent.displayedValue.hasRecord : Boolean(record);
+  const previousRecords = useRef(new Set<string>());
+  const restoreDeletionFocus = useRef(false);
+  useEffect(() => {
+    if (snapshot) {
+      const currentRecords = new Set([
+        ...snapshot.tasks.map(item => `queue:${item.id}`),
+        ...snapshot.history.map(item => `history:${item.id}`)
+      ]);
+      for (const key of previousRecords.current) {
+        if (!currentRecords.has(key)) {
+          restoreDeletionFocus.current = true;
+          readingPositions.current.delete(key);
+        }
+      }
+      previousRecords.current = currentRecords;
+    }
+    if (snapshot) {
+      const route = routeHash(record
+        ? { kind: workspace.activity.view === 'history' ? 'history' : 'task', id: record.id }
+        : { kind: 'library' });
+      if (window.location.hash !== route) window.history.replaceState(null, '', route);
+    }
+    if (restoreDeletionFocus.current && !workspace.confirmation) {
+      restoreDeletionFocus.current = false;
+      const rows = document.querySelectorAll<HTMLElement>('.workbench-task-row');
+      const next = [...rows].find(row => row.dataset.recordId === record?.id)?.querySelector<HTMLButtonElement>('.workbench-task-select');
+      const fallback = document.querySelector<HTMLElement>('.workbench-source-control button:not(:disabled)');
+      (next ?? fallback)?.focus({ preventScroll: true });
+    }
+  }, [snapshot, recordKey, workspace.activity.view, workspace.confirmation]);
   useLayoutEffect(() => {
     // Restore only the result viewport. Selecting a record must never scroll
     // the document or rebuild the reader's stable controls.
@@ -152,11 +174,11 @@ function App(): React.JSX.Element {
         </GlassSurface>
         <GlassSurface className="lens-pane workbench-pane workbench-activity-pane" as="section" aria-labelledby="workbench-activity-heading">
           {caption('任务记录', 'workbench-activity-heading', '02')}
-          <ActivityRail workspace={workspace} onSelectTask={selectTask} onSelectHistory={selectHistory} onViewContent={viewContent} />
+          <ActivityRail workspace={workspace} onSelectTask={selectTask} onSelectHistory={selectHistory} />
         </GlassSurface>
         <GlassSurface className="lens-pane workbench-pane workbench-result-pane" as="section" id="workbench-result" aria-labelledby="workbench-result-heading" tabIndex={-1}>
           {caption('文字与文件', 'workbench-result-heading', '03')}
-          <div className="workbench-reading-scroll" ref={readingScrollRef} onScroll={(event) => { if (readingPositionKey.current) readingPositions.current.set(readingPositionKey.current, event.currentTarget.scrollTop); }}><div className="lens-content-transition workbench-reading-content" ref={readingContent.contentRef}>{readingContent.displayedValue.hasRecord ? <Reader workspace={readingContent.displayedValue.workspace} embedded /> : <div className="workbench-empty"><Icon name="waveform" size={38} /><h3>让声音变成文字</h3><p>从左侧添加媒体，或选择一个任务。<br />转写、译文、字幕与日志会显示在这里。</p><GlassButton onClick={focusImport}><Icon name="upload" size={17} />添加媒体</GlassButton></div>}</div></div>
+          <div className="workbench-reading-scroll" ref={readingScrollRef} onScroll={(event) => { if (readingPositionKey.current) readingPositions.current.set(readingPositionKey.current, event.currentTarget.scrollTop); }}><div className="lens-content-transition workbench-reading-content" ref={readingContent.contentRef}>{hasPresentedRecord ? <Reader workspace={presentedWorkspace} embedded /> : <div className="workbench-empty"><Icon name="waveform" size={38} /><h3>让声音变成文字</h3><p>从左侧添加媒体，或选择一个任务。<br />转写、译文、字幕与日志会显示在这里。</p><GlassButton onClick={focusImport}><Icon name="upload" size={17} />添加媒体</GlassButton></div>}</div></div>
         </GlassSurface>
       </div>}
     </main>

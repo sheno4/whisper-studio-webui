@@ -103,6 +103,14 @@ const isTaskActiveStatus = (status: TaskRecord['status']): boolean => {
 const WORKING_DIR_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const UPLOAD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
+const isWithinPath = (root: string, target: string, includeRoot = false): boolean => {
+  const relative = path.relative(root, target);
+  return (!relative ? includeRoot : relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+};
+
+type TaskFileReference = { id: string; sourceType: TaskSourceType; input?: string; outputDir?: string; outputFiles?: TaskRecord['outputFiles'] };
+type DeletionDirectory = { target: string; realTarget: string; realRoot: string; device: number; inode: number };
+
 export class TaskManager {
   private readonly tasks: TaskRecord[] = [];
   private history: HistoryRecord[] = getHistoryRecords();
@@ -129,6 +137,7 @@ export class TaskManager {
   private readonly preparationWorkers = new Set<PythonWorkerClient>();
   private readonly transcriptionWorkers: Array<{ client: PythonWorkerClient; busy: boolean; pythonPath: string; engine: SettingsData['transcriptionEngine'] }> = [];
   private cancellingTaskIds = new Set<string>();
+  private readonly deletingTaskIds = new Set<string>();
   private stateBroadcastTimer?: NodeJS.Timeout;
   private readonly stateListeners = new Set<(snapshot: AppSnapshot) => void>();
   private readonly toastListeners = new Set<(toast: ToastEvent) => void>();
@@ -268,10 +277,13 @@ export class TaskManager {
   }
 
   async clearHistory(): Promise<void> {
-    const removedIds = this.history.map((item) => item.id);
-    this.history = [];
+    const removed = this.history.flatMap((record) => [record, readTaskResult(record.id)].filter((item): item is HistoryRecord | TaskRecord => Boolean(item)));
     saveHistoryRecords([]);
-    for (const id of removedIds) removeTaskResult(id);
+    this.history = [];
+    for (const record of removed) {
+      if (!this.getTask(record.id)) removeTaskResult(record.id);
+      await this.removeUploadIfUnreferenced(record);
+    }
     this.broadcastState();
   }
 
@@ -281,9 +293,11 @@ export class TaskManager {
       return false;
     }
 
+    const removed = [this.history.find((item) => item.id === historyId), readTaskResult(historyId)];
+    saveHistoryRecords(nextHistory);
     this.history = nextHistory;
-    saveHistoryRecords(this.history);
-    removeTaskResult(historyId);
+    if (!this.getTask(historyId)) removeTaskResult(historyId);
+    for (const record of removed) if (record) await this.removeUploadIfUnreferenced(record);
     this.broadcastState();
     return true;
   }
@@ -321,7 +335,7 @@ export class TaskManager {
 
   async retryTask(taskId: string): Promise<boolean> {
     const task = this.getTask(taskId);
-    if (!task || this.taskControllers.has(task.id) || !['failed', 'cancelled', 'partial'].includes(task.status)) {
+    if (!task || this.deletingTaskIds.has(taskId) || this.taskControllers.has(task.id) || this.runningTasks.has(taskId) || !['failed', 'cancelled', 'partial'].includes(task.status)) {
       return false;
     }
 
@@ -368,7 +382,7 @@ export class TaskManager {
   }
 
   async removeTask(taskId: string): Promise<boolean> {
-    if (this.taskControllers.has(taskId)) {
+    if (this.deletingTaskIds.has(taskId) || this.taskControllers.has(taskId)) {
       return false;
     }
 
@@ -380,31 +394,55 @@ export class TaskManager {
     const task = this.tasks[index];
     this.tasks.splice(index, 1);
     await this.removeUploadIfUnreferenced(task);
+    if (!this.history.some((record) => record.id === taskId)) removeTaskResult(taskId);
     this.broadcastState();
     return true;
   }
 
-  private async removeUploadIfUnreferenced(task: TaskRecord): Promise<void> {
-    if (task.sourceType !== 'file') {
+  private async removeUploadIfUnreferenced(task: Pick<TaskFileReference, 'sourceType' | 'input'>, excludedId?: string): Promise<void> {
+    if (task.sourceType !== 'file' || !task.input) {
       return;
     }
 
     const uploadRoot = path.resolve(getUploadsDir());
     const resolvedInput = path.resolve(task.input);
-    if (!resolvedInput.startsWith(`${uploadRoot}${path.sep}`)) {
+    if (!isWithinPath(uploadRoot, resolvedInput)) {
       return;
     }
 
-    const referenced = this.tasks.some(
-      (candidate) =>
-        candidate.sourceType === 'file' &&
-        path.resolve(candidate.input) === resolvedInput
-    ) || this.history.some((record) => record.id === task.id || (
-      record.sourceType === 'file' && typeof record.input === 'string' && path.resolve(record.input) === resolvedInput
-    ));
-    if (!referenced) {
-      await fs.rm(resolvedInput, { force: true }).catch(() => undefined);
+    const references = this.getFileReferences().filter((record) => record.id !== excludedId);
+    if (references.some((record) => record.sourceType === 'file' && record.input && path.relative(path.resolve(record.input), resolvedInput) === '')) return;
+
+    // Never follow an uploaded symlink to a user's original file outside uploads.
+    let stat;
+    try { stat = await fs.lstat(resolvedInput); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
+    if (!stat.isFile() || stat.isSymbolicLink()) return;
+    const realRoot = await fs.realpath(uploadRoot);
+    const realInput = await fs.realpath(resolvedInput);
+    if (!isWithinPath(realRoot, realInput)) return;
+    for (const reference of references) {
+      const files = [...(reference.sourceType === 'file' && reference.input ? [reference.input] : []),
+        ...Object.values(reference.outputFiles ?? {})];
+      for (const filename of files) {
+        const realReference = await fs.realpath(filename).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return undefined;
+          throw error;
+        });
+        if (realReference && path.relative(realReference, realInput) === '') return;
+      }
     }
+    if ((await fs.realpath(uploadRoot)) !== realRoot || (await fs.realpath(resolvedInput)) !== realInput || (await fs.lstat(resolvedInput)).isSymbolicLink()) {
+      throw new Error('上传文件路径在删除期间发生变化，请重试。');
+    }
+    await fs.rm(resolvedInput, { force: true });
+  }
+
+  private getFileReferences(): TaskFileReference[] {
+    return [...this.tasks, ...this.history, ...this.history.flatMap((record) => {
+      const saved = readTaskResult(record.id);
+      return saved ? [saved] : [];
+    })];
   }
 
   private async cleanupStorage(): Promise<void> {
@@ -422,7 +460,15 @@ export class TaskManager {
         const target = path.join(outputRoot, entry.name);
         const stat = await fs.stat(target).catch(() => null);
         if (stat && now - stat.mtimeMs > WORKING_DIR_MAX_AGE_MS) {
-          await fs.rm(target, { recursive: true, force: true }).catch(() => undefined);
+          try {
+            // Failed/cancelled tasks can legitimately keep a working directory in history.
+            // Only age out abandoned directories, with the same boundary checks as manual deletion.
+            const directory = await this.validateDeletionDirectory('', outputRoot, target);
+            if (directory) {
+              await this.assertDeletionDirectoryUnchanged(directory, outputRoot);
+              await fs.rm(target, { recursive: true, force: true });
+            }
+          } catch { /* Referenced or unsafe paths must remain available. */ }
         }
       }
     } catch {
@@ -431,11 +477,7 @@ export class TaskManager {
 
     const uploadRoot = path.resolve(getUploadsDir());
     const referencedUploads = new Set(
-      [
-        ...this.tasks.filter((task) => task.sourceType === 'file').map((task) => path.resolve(task.input)),
-        ...this.history.flatMap((record) => record.sourceType === 'file' && typeof record.input === 'string'
-          ? [path.resolve(record.input)] : [])
-      ]
+      this.getFileReferences().flatMap((record) => record.sourceType === 'file' && record.input ? [path.resolve(record.input)] : [])
     );
 
     try {
@@ -452,7 +494,7 @@ export class TaskManager {
 
         const stat = await fs.stat(target).catch(() => null);
         if (stat && now - stat.mtimeMs > UPLOAD_MAX_AGE_MS) {
-          await fs.rm(target, { force: true }).catch(() => undefined);
+          await this.removeUploadIfUnreferenced({ sourceType: 'file', input: target }).catch(() => undefined);
         }
       }
     } catch {
@@ -467,58 +509,107 @@ export class TaskManager {
     return openLocalPath(outputDir);
   }
 
-  async deleteTaskDirectory(recordId: string): Promise<boolean> {
-    if (this.taskControllers.has(recordId)) {
-      return false;
-    }
-
+  /** Removes a terminal task, its archived result, and its exclusively owned managed files. */
+  async deleteTask(recordId: string): Promise<boolean> {
     const task = this.getTask(recordId);
-    const historyRecord = this.history.find((item) => item.id === recordId);
-    const historyResult = historyRecord ? this.getHistoryResult(recordId) : undefined;
-    const outputDir = task?.outputDir ?? historyRecord?.outputDir;
-    if (!outputDir) {
-      return false;
+    if (this.deletingTaskIds.has(recordId) || this.taskControllers.has(recordId) || this.runningTasks.has(recordId) ||
+        (task && isTaskActiveStatus(task.status))) return false;
+    const historyRecord = this.history.find((record) => record.id === recordId);
+    if (!task && !historyRecord) return false;
+
+    this.deletingTaskIds.add(recordId);
+    try {
+      const saved = readTaskResult(recordId);
+      const records = [task, historyRecord, saved].filter((record): record is TaskRecord | HistoryRecord => Boolean(record));
+      const outputRoot = path.resolve(this.settings.outputDir);
+      const directories: DeletionDirectory[] = [];
+      for (const target of new Set(records.flatMap((record) => record.outputDir ? [path.resolve(record.outputDir)] : []))) {
+        const directory = await this.validateDeletionDirectory(recordId, outputRoot, target);
+        if (directory) directories.push(directory);
+      }
+
+      // Validate every registered location before deleting anything, including a previous retry result.
+      const ownedDirectories = directories.filter((directory, index) => !directories.some((other, otherIndex) =>
+        otherIndex !== index && isWithinPath(other.realTarget, directory.realTarget, true) &&
+        (path.relative(other.realTarget, directory.realTarget) !== '' || otherIndex < index)));
+      for (const directory of ownedDirectories) {
+        await this.assertDeletionDirectoryUnchanged(directory, outputRoot);
+        await fs.rm(directory.target, { recursive: true, force: true });
+      }
+      for (const record of records) await this.removeUploadIfUnreferenced(record, recordId);
+
+      const nextHistory = this.history.filter((record) => record.id !== recordId);
+      removeTaskResult(recordId);
+      try {
+        saveHistoryRecords(nextHistory);
+      } catch (error) {
+        // Keep the finished snapshot available when persisting removal fails.
+        if (saved) saveTaskResult(saved);
+        throw error;
+      }
+      this.history = nextHistory;
+      const index = this.tasks.findIndex((record) => record.id === recordId);
+      if (index !== -1) this.tasks.splice(index, 1);
+      this.broadcastState();
+      return true;
+    } finally {
+      this.deletingTaskIds.delete(recordId);
+    }
+  }
+
+  /** Compatibility alias: deleting output data now deletes the complete task. */
+  async deleteTaskDirectory(recordId: string): Promise<boolean> {
+    return this.deleteTask(recordId);
+  }
+
+  private async validateDeletionDirectory(recordId: string, outputRoot: string, target: string): Promise<DeletionDirectory | undefined> {
+    // Reject roots even if they have already disappeared; no recursive call may ever target one.
+    if (path.relative(outputRoot, target) === '' || path.relative(path.parse(target).root, target) === '') {
+      throw new Error('不能删除输出根目录，请检查该任务的输出路径。');
+    }
+    let stat;
+    try { stat = await fs.lstat(target); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
+    if (!isWithinPath(outputRoot, target)) {
+      throw new Error('该任务的输出目录不在当前输出位置内。请将设置中的输出目录切回原位置后再删除任务。');
+    }
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('任务输出路径不是受管的普通目录，已停止删除。');
+    const realRoot = await fs.realpath(outputRoot);
+    const realTarget = await fs.realpath(target);
+    if (!isWithinPath(realRoot, realTarget) || path.relative(realRoot, realTarget) !== path.relative(outputRoot, target)) {
+      throw new Error('任务输出路径经过了符号链接或已超出输出目录，已停止删除。');
     }
 
-    const outputRoot = path.resolve(this.settings.outputDir);
-    const resolvedOutputDir = path.resolve(outputDir);
-    const relative = path.relative(outputRoot, resolvedOutputDir);
-    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
-      return false;
-    }
-
-    await fs.rm(resolvedOutputDir, { recursive: true, force: true });
-
-    if (historyResult) {
-      const sameDirectory = historyResult.outputDir && path.resolve(historyResult.outputDir) === resolvedOutputDir;
-      if (sameDirectory) {
-        historyResult.outputDir = undefined;
-        historyResult.outputFiles = {};
-      } else {
-        for (const [kind, filename] of Object.entries(historyResult.outputFiles)) {
-          if (typeof filename !== 'string') continue;
-          const fileRelative = path.relative(resolvedOutputDir, path.resolve(filename));
-          if (!fileRelative || (!fileRelative.startsWith('..') && !path.isAbsolute(fileRelative))) {
-            delete historyResult.outputFiles[kind as keyof TaskRecord['outputFiles']];
-          }
+    for (const reference of this.getFileReferences()) {
+      const protectedPaths = [
+        ...(reference.id !== recordId && reference.outputDir ? [reference.outputDir] : []),
+        ...(reference.id !== recordId ? Object.values(reference.outputFiles ?? {}) : []),
+        ...(reference.sourceType === 'file' && reference.input ? [reference.input] : [])
+      ];
+      for (const filename of protectedPaths) {
+        const resolved = path.resolve(filename);
+        const actual = await fs.realpath(resolved).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return undefined;
+          throw error;
+        });
+        if (isWithinPath(target, resolved, true) || (actual && isWithinPath(realTarget, actual, true)) ||
+            (reference.id !== recordId && reference.outputDir === filename &&
+              (isWithinPath(resolved, target, true) || (actual && isWithinPath(actual, realTarget, true))))) {
+          throw new Error('该输出目录仍被其他任务或本地原始文件引用，已停止删除。');
         }
       }
-      saveTaskResult(historyResult);
     }
+    return { target, realTarget, realRoot, device: stat.dev, inode: stat.ino };
+  }
 
-    if (task) {
-      task.outputDir = undefined;
-      task.outputFiles = {};
-      this.appendTaskLog(task.id, 'warning', 'Task output directory was deleted by the user.', 'storage');
+  private async assertDeletionDirectoryUnchanged(directory: DeletionDirectory, outputRoot: string): Promise<void> {
+    const stat = await fs.lstat(directory.target);
+    const realRoot = await fs.realpath(outputRoot);
+    const realTarget = await fs.realpath(directory.target);
+    if (stat.isSymbolicLink() || !stat.isDirectory() || stat.dev !== directory.device || stat.ino !== directory.inode ||
+        realRoot !== directory.realRoot || realTarget !== directory.realTarget || !isWithinPath(realRoot, realTarget)) {
+      throw new Error('任务输出路径在删除期间发生变化，请刷新后重试。');
     }
-
-    if (historyRecord && historyRecord.outputDir && path.resolve(historyRecord.outputDir) === resolvedOutputDir) {
-      historyRecord.outputDir = undefined;
-      saveHistoryRecords(this.history);
-    }
-
-    this.broadcastState();
-    return true;
   }
 
   async openSourceLocation(taskId: string): Promise<boolean> {

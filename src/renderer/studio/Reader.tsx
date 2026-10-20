@@ -11,6 +11,7 @@ import { describeTaskLanguage, describeTaskMode, formatDuration, formatLongDateT
 import { TaskProgress } from './ActivityRail';
 import { formatTimestamp, literalMatches, mergeTranscript, pairSegments } from './content/transcript';
 import ActionMenu from './content/ActionMenu';
+import TaskActions from './content/TaskActions';
 
 export interface ReaderProps {
   workspace: WhisperWorkspaceController;
@@ -58,8 +59,6 @@ export default function Reader({ workspace, onBack, embedded = false }: ReaderPr
   const { mode, segmented, timestamps } = pageContent.displayedValue;
   const [query, setQuery] = useState('');
   const [currentHit, setCurrentHit] = useState(-1);
-  const [removing, setRemoving] = useState(false);
-  const removalRequested = useRef(false);
   const readingRef = useRef<HTMLDivElement>(null);
   const original = mergeTranscript(task?.transcriptText, task?.transcriptSegments);
   const translation = mergeTranscript(task?.translationText, task?.translationSegments);
@@ -73,14 +72,6 @@ export default function Reader({ workspace, onBack, embedded = false }: ReaderPr
   const readingFormatAvailable = selectedMode !== 'logs' && rows.length > 0;
 
   useEffect(() => { readingRef.current?.querySelectorAll('[data-reader-hit]').forEach((hit) => hit.removeAttribute('data-current')); setCurrentHit(-1); }, [query, pageContent.displayedKey, record?.id, mode === 'logs' ? logText : original, mode === 'logs' ? '' : translation]);
-  useEffect(() => { if (removalRequested.current && !record && !embedded) onBack?.(); }, [record, onBack, embedded]);
-  const removeRecord = async (): Promise<void> => {
-    if (!record || removing) return;
-    removalRequested.current = true;
-    setRemoving(true);
-    try { await (history ? workspace.removeHistory(history.id) : workspace.removeTask(record.id)); }
-    finally { setRemoving(false); }
-  };
   const jumpToHit = (direction: number): void => {
     const hits = readingRef.current?.querySelectorAll<HTMLElement>('[data-reader-hit]');
     if (!hits?.length) return;
@@ -108,7 +99,7 @@ export default function Reader({ workspace, onBack, embedded = false }: ReaderPr
           <GlassSegmentedControl className="studio-reading-modes" label="阅读内容" value={selectedMode} onChange={(value) => setMode(value as ReadingMode)} options={readingModes.map((option) => ({ ...option, badge: option.value === 'logs' ? task.logs.length : undefined }))} />
           <div className="studio-reading-actions">
           <div className="studio-find-controls" data-active={hasQuery} aria-hidden={!hasQuery} aria-label="查找结果"><span aria-live="polite">{currentHit >= 0 ? `${currentHit + 1} / ` : ''}{hitCount} 处</span><button type="button" disabled={!hasQuery || !hitCount} onClick={() => jumpToHit(-1)} aria-label="上一个匹配">↑</button><button type="button" disabled={!hasQuery || !hitCount} onClick={() => jumpToHit(1)} aria-label="下一个匹配">↓</button></div>
-            <button disabled={!textToCopy.trim()} className="studio-tool-button" onClick={() => void workspace.copyText(textToCopy, mode === 'logs' ? '处理日志' : mode === 'translation' ? '中文译文' : mode === 'bilingual' ? '双语文本' : '原文')} type="button"><Icon name="copy" />复制</button><ActionMenu label={<><Icon name="download" />导出</>} ariaLabel="导出文件">{[false, true].map((translated) => <div className="studio-export-group" role="group" aria-label={translated ? '导出译文' : '导出原文'} key={String(translated)}><strong>{translated ? '中文译文' : '转写原文'}</strong><div>{exportOptions.filter((option) => option.translated === translated).map((option) => <button disabled={!task.outputFiles[option.kind]} key={option.kind} onClick={() => void workspace.exportTaskFile(task.id, option.kind, history ? 'history' : undefined)} type="button" role="menuitem">{option.label}</button>)}</div></div>)}</ActionMenu></div>
+            <button disabled={!textToCopy.trim()} className="studio-tool-button" onClick={() => void workspace.copyText(textToCopy, mode === 'logs' ? '处理日志' : mode === 'translation' ? '中文译文' : mode === 'bilingual' ? '双语文本' : '原文')} type="button"><Icon name="copy" />复制</button><ActionMenu label={<><Icon name="download" />导出</>} ariaLabel="导出文件" disabled={!exportOptions.some((option) => Boolean(task.outputFiles[option.kind]))}>{[false, true].map((translated) => <div className="studio-export-group" role="group" aria-label={translated ? '导出译文' : '导出原文'} key={String(translated)}><strong>{translated ? '中文译文' : '转写原文'}</strong><div>{exportOptions.filter((option) => option.translated === translated).map((option) => <button disabled={!task.outputFiles[option.kind]} key={option.kind} onClick={() => void workspace.exportTaskFile(task.id, option.kind, history ? 'history' : undefined)} type="button" role="menuitem">{option.label}</button>)}</div></div>)}</ActionMenu></div>
         </nav>
         <div className="studio-reading-preferences">
           <label className="studio-reader-search"><span className="studio-visually-hidden">搜索当前内容</span><input type="search" placeholder="在当前内容中查找" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); jumpToHit(event.shiftKey ? -1 : 1); } }} /></label>
@@ -123,13 +114,12 @@ export default function Reader({ workspace, onBack, embedded = false }: ReaderPr
       </> : <article className="studio-result-loading" aria-busy={workspace.activity.historyResultLoading} role="status"><Icon name={workspace.activity.historyResultError ? 'warning' : 'history'} size={30} /><h2>{workspace.activity.historyResultError ? '暂时无法读取结果' : '正在读取任务结果'}</h2><p>{workspace.activity.historyResultError || '正在载入原文、译文、字幕与处理日志。'}</p>{workspace.activity.historyResultError ? <GlassButton onClick={workspace.reloadHistoryResult}>重新读取</GlassButton> : null}</article>}
 
       <section className="studio-record-files" aria-labelledby="studio-files-title"><header><h2 id="studio-files-title">文件与任务</h2><div className="studio-record-actions">
-        <GlassButton disabled={!record.outputDir} onClick={() => { if (!history && task) void workspace.openOutputDirectory(task.id); else if (record.outputDir) void workspace.revealPath(record.outputDir); }}><Icon name="folder" />打开输出目录</GlassButton>
-        {task ? <GlassButton disabled={Boolean(history && !task.outputFiles.sourceMedia && !task.outputFiles.downloadedMedia && task.sourceType !== 'file')} onClick={() => { if (!history) void workspace.openSourceLocation(task.id); else { const path = task.outputFiles.sourceMedia || task.outputFiles.downloadedMedia || (task.sourceType === 'file' ? task.input : undefined); if (path) void workspace.revealPath(path); } }}><Icon name="external" />定位媒体文件</GlassButton> : null}
+        <TaskActions workspace={workspace} record={history ?? record} source={history ? 'history' : 'queue'} result={task} variant="row" scope="files" />
         {sourceUrl ? <a className="studio-text-button" href={sourceUrl} target="_blank" rel="noopener noreferrer">访问原始链接<Icon name="external" size={15} /></a> : null}
       </div></header>
       {outputs.length ? <ul className="studio-output-files">{outputs.map(([kind, path]) => <li key={kind}><button onClick={() => void workspace.revealPath(path)} title={path} type="button"><Icon name={kind === 'audio' || kind === 'downloadedMedia' || kind === 'sourceMedia' ? 'waveform' : 'file'} /><span><strong>{outputLabels[kind]}</strong><small>{path.split(/[\\/]/).at(-1)}</small></span><Icon name="external" size={15} /></button></li>)}</ul> : null}
       <div className="studio-record-meta">{meta.map((label) => <span key={label}>{label}</span>)}{task && task.attempts > 1 ? <span>已重试 {task.attempts - 1} 次</span> : null}{history ? <span>结束于 {formatLongDateTime(history.finishedAt)}</span> : null}</div>
-      <div className="studio-record-management" role="group" aria-label="管理任务">{!history && task && ['failed', 'cancelled', 'partial'].includes(task.status) ? <button className="studio-text-button" onClick={() => void workspace.retryTask(task.id)} type="button"><Icon name="retry" />重新执行任务</button> : null}{task && active ? <button className="studio-text-button" onClick={() => void workspace.cancelTask(task.id)} type="button"><Icon name="stop" />取消任务</button> : null}{!active ? <button className="studio-text-button" disabled={removing} onClick={() => void removeRecord()} type="button"><Icon name="close" />{removing ? '正在移除…' : history ? '移除历史记录' : '移出当前任务'}</button> : null}<button className="studio-text-button studio-danger" disabled={!record.outputDir || active} onClick={() => workspace.requestDeleteTaskDirectory(record.id)} type="button"><Icon name="trash" />删除输出目录</button></div>
+      <div className="studio-record-management" role="group" aria-label="管理任务"><TaskActions workspace={workspace} record={history ?? record} source={history ? 'history' : 'queue'} result={task} variant="row" scope="management" /></div>
       </section>
     </section>
   );

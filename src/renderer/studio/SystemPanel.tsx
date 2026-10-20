@@ -90,12 +90,14 @@ export function Confirmation({ workspace }: { workspace: WhisperWorkspaceControl
   const panelRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
+  const descriptionId = useId();
   const request = workspace.confirmation!;
   useDialogInteraction(panelRef, { onDismiss: workspace.dismissConfirmation, canDismiss: !workspace.confirming, initialFocusRef: cancelRef });
   return <div className="studio-modal-backdrop studio-confirm-backdrop" onClick={(event) => { if (event.target === event.currentTarget && !workspace.confirming) workspace.dismissConfirmation(); }}>
-    <GlassSurface role="dialog" aria-modal="true" aria-labelledby={titleId} className="studio-modal studio-confirm" ref={panelRef} tabIndex={-1}>
+    <GlassSurface role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} className="studio-modal studio-confirm" ref={panelRef} tabIndex={-1}>
       <span className={request.tone === 'danger' ? 'studio-danger' : 'studio-muted'}><Icon name={request.tone === 'danger' ? 'trash' : 'info'} size={32} /></span>
-      <h2 id={titleId}>{request.title}</h2><p>{request.message}</p>
+      <h2 id={titleId}>{request.title}</h2><p id={descriptionId}>{request.message}</p>
+      {workspace.confirmationError ? <p className="studio-confirm-error" role="alert">{workspace.confirmationError}</p> : null}
       <div className="studio-confirm-actions"><button ref={cancelRef} className="studio-button" disabled={workspace.confirming} onClick={workspace.dismissConfirmation} type="button">取消</button><GlassButton className={request.tone === 'danger' ? 'studio-destructive' : 'studio-primary'} disabled={workspace.confirming} onClick={() => void workspace.confirmAction()}>{workspace.confirming ? '正在处理…' : request.confirmLabel}</GlassButton></div>
     </GlassSurface>
   </div>;

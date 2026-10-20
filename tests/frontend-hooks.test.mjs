@@ -104,6 +104,86 @@ function workspaceApi(overrides = {}) {
 const historySummary = (id, outputDir = `/results/${id}`) => ({ id, displayName: id, sourceType: 'link', createdAt: '2026-10-19T00:00:00Z', finishedAt: '2026-10-19T01:00:00Z', status: 'completed', outputDir });
 const finishedResult = (id, changes = {}) => ({ id, sourceType: 'link', input: `https://fixture.invalid/${id}`, displayName: id, status: 'completed', createdAt: '2026-10-19T00:00:00Z', updatedAt: '2026-10-19T01:00:00Z', progressMessage: '完成', attempts: 1, translateToChinese: true, downloadBehavior: 'transcribe', videoQuality: 'best', transcriptionLanguage: 'auto', transcriptText: `Original ${id}`, translationText: `译文 ${id}`, transcriptSegments: [{ id: 0, start: 0, end: 1, text: `Original ${id}` }], translationSegments: [{ id: 0, start: 0, end: 1, text: `译文 ${id}` }], outputDir: `/results/${id}`, outputFiles: { transcriptTxt: `/results/${id}/original.txt` }, logs: [{ timestamp: '2026-10-19T01:00:00Z', level: 'info', message: `Finished ${id}` }], ...changes });
 
+test('task deletion discards both records immediately and ignores late snapshots and creation responses', async () => {
+  const removed = finishedResult('deleted'), retained = finishedResult('retained');
+  const stale = { ...emptySnapshot, tasks: [removed, retained], history: [historySummary(removed.id), historySummary(retained.id)] };
+  let listener;
+  const hook = mountHook('useDesktopSnapshot', { getSnapshot: async () => stale, onState: callback => { listener = callback; return () => {}; } });
+  await hook.settle();
+  hook.current.discardTaskRecords([removed.id]);
+  assert.deepEqual(Array.from(hook.current.snapshot.tasks, task => task.id), [retained.id]);
+  assert.deepEqual(Array.from(hook.current.snapshot.history, task => task.id), [retained.id]);
+  listener(stale);
+  hook.current.includeCreatedTasks([removed]);
+  await hook.current.reload();
+  assert.deepEqual(Array.from(hook.current.snapshot.tasks, task => task.id), [retained.id]);
+  assert.deepEqual(Array.from(hook.current.snapshot.history, task => task.id), [retained.id]);
+  hook.dispose();
+});
+
+test('task deletion confirmation prevents duplicate requests and keeps failures open for retry', async () => {
+  const task = finishedResult('delete-confirmation'), pending = deferred();
+  const snapshot = { ...emptySnapshot, tasks: [task], history: [historySummary(task.id)] };
+  let calls = 0;
+  const hook = mountHook('useWhisperWorkspace', workspaceApi({ getSnapshot: async () => snapshot, deleteTask: () => ++calls === 1 ? pending.promise : Promise.resolve(true) }));
+  await hook.settle();
+  hook.current.requestDeleteTask(task.id);
+  assert.equal(hook.current.confirmation.title, '删除任务？');
+  assert.match(hook.current.confirmation.message, /当前任务、对应历史记录和生成文件将一起删除/);
+  const confirm = hook.current.confirmAction;
+  const first = confirm();
+  await confirm();
+  hook.current.dismissConfirmation();
+  assert.equal(calls, 1);
+  assert.ok(hook.current.confirmation);
+  pending.resolve(false);
+  await first;
+  assert.equal(hook.current.confirming, false);
+  assert.ok(hook.current.confirmation);
+  assert.match(hook.current.confirmationError, /任务仍在运行/);
+  assert.equal(hook.current.snapshot.tasks.length, 1);
+  await hook.current.confirmAction();
+  assert.equal(calls, 2);
+  assert.equal(hook.current.confirmation, null);
+  assert.equal(hook.current.snapshot.tasks.length, 0);
+  assert.equal(hook.current.snapshot.history.length, 0);
+  hook.dispose();
+});
+
+test('task deletion rechecks a historical ID that starts running while confirmation is open', async () => {
+  const task = finishedResult('retry-active');
+  const snapshot = { ...emptySnapshot, tasks: [task], history: [historySummary(task.id)] };
+  let listener, calls = 0;
+  const hook = mountHook('useWhisperWorkspace', workspaceApi({
+    getSnapshot: async () => snapshot,
+    onState: callback => { listener = callback; return () => {}; },
+    deleteTask: async () => { calls++; return true; }
+  }));
+  await hook.settle();
+  hook.current.requestDeleteTask(task.id);
+  listener({ ...snapshot, tasks: [{ ...task, status: 'transcribing' }] });
+  await hook.current.confirmAction();
+  assert.equal(calls, 0);
+  assert.match(hook.current.confirmationError, /已开始运行/);
+  assert.equal(hook.current.snapshot.history.length, 1);
+  hook.current.dismissConfirmation();
+  hook.current.requestDeleteTask(task.id);
+  assert.equal(hook.current.confirmation, null);
+  assert.equal(hook.current.toasts.at(-1).title, '请先取消任务');
+  hook.dispose();
+});
+
+test('task deletion selects an adjacent record before unrelated active tasks', () => {
+  const first = finishedResult('first', { status: 'transcribing' }), middle = finishedResult('middle'), last = finishedResult('last');
+  const hook = mountHook('useWorkspaceSelection', { getHistoryResult: async id => finishedResult(id) }, [{ ...emptySnapshot, tasks: [first, middle, last] }]);
+  hook.current.setSelectedTaskId(middle.id);
+  hook.update({ ...emptySnapshot, tasks: [first, last] });
+  assert.equal(hook.current.selectedTaskId, last.id);
+  hook.update({ ...emptySnapshot, tasks: [first] });
+  assert.equal(hook.current.selectedTaskId, first.id);
+  hook.dispose();
+});
+
 test('history loads full finished results without a live task and rejects late selection responses', async () => {
   const first = deferred(), second = deferred(), refreshed = deferred();
   const requests = [];
