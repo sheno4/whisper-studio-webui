@@ -429,14 +429,11 @@ export function createPortableTools(options = {}) {
     } finally { if (!preservePrepared) await fs.rm(work, { recursive: true, force: true }); }
   };
 
-  return { ensurePythonRuntime, ensureFfmpeg, downloadVerifiedFile: download, extractVerifiedArchive: extract, extractArchive: extract };
+  // Browser preparation uses the same extraction implementation with its own
+  // publisher metadata; Python/FFmpeg keep download verification internal.
+  return { ensurePythonRuntime, ensureFfmpeg, extractArchive: extract };
 }
 
 const portableTools = createPortableTools();
 export const ensurePythonRuntime = portableTools.ensurePythonRuntime;
 export const ensureFfmpeg = portableTools.ensureFfmpeg;
-export const downloadVerifiedFile = portableTools.downloadVerifiedFile;
-// Call this only after downloadVerifiedFile has verified the publisher checksum.
-export const extractVerifiedArchive = portableTools.extractVerifiedArchive;
-// Chrome for Testing publishes TLS URLs and sizes, but no SHA256 manifest.
-export const extractArchive = portableTools.extractArchive;

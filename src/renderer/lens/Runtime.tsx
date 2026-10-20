@@ -6,6 +6,7 @@ import {createNativeLifecycle, controlSelector, withoutInitialControlMount} from
 import {createNativeDOMEnhancer} from './native-dom';
 import {adaptViewportRenderer, type NativeRenderer} from './viewport-renderer';
 import {createTopLayerPresentation} from './top-layer-presentation';
+import {adaptControlMaterials} from './control-materials';
 
 export type LensRuntimeOptions = {wallpaperUrl?: string};
 type StageRuntime = {system: GlassSystem; schedule(root: HTMLElement): void; release(root: HTMLElement): void; wallpaper(url?: string): void; destroy(): void};
@@ -33,6 +34,7 @@ function createStageRuntime(stage: HTMLElement): StageRuntime {
   const lifecycle = createNativeLifecycle(system, stage);
   const enhancer = createNativeDOMEnhancer(stage);
   const viewport = renderer ? adaptViewportRenderer(renderer, stage, canvas) : undefined;
+  const controlMaterials = renderer ? adaptControlMaterials(renderer) : undefined;
   const presentation = renderer && viewport ? createTopLayerPresentation(renderer, stage, canvas, viewport.viewport) : undefined;
   const abort = new AbortController();
   const media = ['(prefers-color-scheme: dark)', '(prefers-reduced-motion: reduce)', '(prefers-reduced-transparency: reduce)', '(prefers-contrast: more)', '(forced-colors: active)'].map(query => window.matchMedia(query));
@@ -159,7 +161,7 @@ function createStageRuntime(stage: HTMLElement): StageRuntime {
     destroyed = true; ++wallpaperGeneration; cancelPendingImage();
     cancelAnimationFrame(mounting); roots.clear();
     structureObserver.disconnect(); preferences.disconnect(); gpu.disconnect();
-    abort.abort(); unsubscribeIntensity(); presentation?.destroy(); viewport?.destroy();
+    abort.abort(); unsubscribeIntensity(); presentation?.destroy(); controlMaterials?.destroy(); viewport?.destroy();
     lifecycle.destroy(); system.destroy(); enhancer.destroy(); image = undefined;
     canvas.remove(); stage.classList.remove('webgl-ready', 'fallback', 'opaque', 'lg-stage');
     delete stage.dataset.glassRenderer; delete stage.dataset.lensMaterial; delete stage.dataset.lensWallpaper;

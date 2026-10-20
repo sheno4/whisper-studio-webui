@@ -38,6 +38,7 @@ import { TaskSlotLimiter } from './concurrency';
 import { PythonWorkerClient } from './python-worker';
 import { ModelPreparationManager } from './model-preparation';
 import { openLocalPath, revealLocalPath } from './system';
+import { readTaskResult, recoverTaskResult, removeTaskResult, saveTaskResult } from './task-results';
 import {
   getHistoryRecords,
   getTranslationServiceApiKey,
@@ -267,8 +268,10 @@ export class TaskManager {
   }
 
   async clearHistory(): Promise<void> {
+    const removedIds = this.history.map((item) => item.id);
     this.history = [];
     saveHistoryRecords([]);
+    for (const id of removedIds) removeTaskResult(id);
     this.broadcastState();
   }
 
@@ -280,8 +283,32 @@ export class TaskManager {
 
     this.history = nextHistory;
     saveHistoryRecords(this.history);
+    removeTaskResult(historyId);
     this.broadcastState();
     return true;
+  }
+
+  getHistoryResult(historyId: string): TaskRecord | undefined {
+    const record = this.history.find((item) => item.id === historyId);
+    if (!record) return undefined;
+    const saved = readTaskResult(historyId);
+    if (saved) return saved;
+
+    const live = this.getTask(historyId);
+    // A retry reuses the same ID. The historical result remains the previous
+    // terminal snapshot until this run is finalized.
+    if (live && !isTaskActiveStatus(live.status) && live.updatedAt === record.finishedAt) {
+      const result = structuredClone(live);
+      saveTaskResult(result);
+      return result;
+    }
+    // Legacy files may be temporarily unavailable. Do not turn an incomplete
+    // recovery into an authoritative snapshot that hides files restored later.
+    return recoverTaskResult(record);
+  }
+
+  getHistoryFilePath(historyId: string, kind: ExportFileKind): string | undefined {
+    return this.getHistoryResult(historyId)?.outputFiles[kind];
   }
 
   addLinkTasks(links: string[], options?: CreateTaskOptions): TaskRecord[] {
@@ -372,7 +399,9 @@ export class TaskManager {
       (candidate) =>
         candidate.sourceType === 'file' &&
         path.resolve(candidate.input) === resolvedInput
-    );
+    ) || this.history.some((record) => record.id === task.id || (
+      record.sourceType === 'file' && typeof record.input === 'string' && path.resolve(record.input) === resolvedInput
+    ));
     if (!referenced) {
       await fs.rm(resolvedInput, { force: true }).catch(() => undefined);
     }
@@ -402,9 +431,11 @@ export class TaskManager {
 
     const uploadRoot = path.resolve(getUploadsDir());
     const referencedUploads = new Set(
-      this.tasks
-        .filter((task) => task.sourceType === 'file')
-        .map((task) => path.resolve(task.input))
+      [
+        ...this.tasks.filter((task) => task.sourceType === 'file').map((task) => path.resolve(task.input)),
+        ...this.history.flatMap((record) => record.sourceType === 'file' && typeof record.input === 'string'
+          ? [path.resolve(record.input)] : [])
+      ]
     );
 
     try {
@@ -443,6 +474,7 @@ export class TaskManager {
 
     const task = this.getTask(recordId);
     const historyRecord = this.history.find((item) => item.id === recordId);
+    const historyResult = historyRecord ? this.getHistoryResult(recordId) : undefined;
     const outputDir = task?.outputDir ?? historyRecord?.outputDir;
     if (!outputDir) {
       return false;
@@ -457,13 +489,30 @@ export class TaskManager {
 
     await fs.rm(resolvedOutputDir, { recursive: true, force: true });
 
+    if (historyResult) {
+      const sameDirectory = historyResult.outputDir && path.resolve(historyResult.outputDir) === resolvedOutputDir;
+      if (sameDirectory) {
+        historyResult.outputDir = undefined;
+        historyResult.outputFiles = {};
+      } else {
+        for (const [kind, filename] of Object.entries(historyResult.outputFiles)) {
+          if (typeof filename !== 'string') continue;
+          const fileRelative = path.relative(resolvedOutputDir, path.resolve(filename));
+          if (!fileRelative || (!fileRelative.startsWith('..') && !path.isAbsolute(fileRelative))) {
+            delete historyResult.outputFiles[kind as keyof TaskRecord['outputFiles']];
+          }
+        }
+      }
+      saveTaskResult(historyResult);
+    }
+
     if (task) {
       task.outputDir = undefined;
       task.outputFiles = {};
       this.appendTaskLog(task.id, 'warning', 'Task output directory was deleted by the user.', 'storage');
     }
 
-    if (historyRecord) {
+    if (historyRecord && historyRecord.outputDir && path.resolve(historyRecord.outputDir) === resolvedOutputDir) {
       historyRecord.outputDir = undefined;
       saveHistoryRecords(this.history);
     }
@@ -473,7 +522,7 @@ export class TaskManager {
   }
 
   async openSourceLocation(taskId: string): Promise<boolean> {
-    const task = this.getTask(taskId);
+    const task = this.getTask(taskId) ?? this.getHistoryResult(taskId);
     if (!task) {
       return false;
     }
@@ -488,7 +537,7 @@ export class TaskManager {
 
   getTaskFilePath(taskId: string, kind: ExportFileKind): string | undefined {
     const task = this.getTask(taskId);
-    return task?.outputFiles[kind];
+    return task ? task.outputFiles[kind] : this.getHistoryFilePath(taskId, kind);
   }
 
   async revealPath(targetPath: string): Promise<boolean> {
@@ -663,11 +712,13 @@ export class TaskManager {
     }
 
     const finishedStatus = task.status as HistoryRecord['status'];
+    saveTaskResult(task);
     this.history = [
       {
         id: task.id,
         displayName: task.displayName,
         sourceType: task.sourceType,
+        input: task.input,
         createdAt: task.createdAt,
         finishedAt: task.updatedAt,
         status: finishedStatus,
@@ -681,7 +732,7 @@ export class TaskManager {
         error: task.error
       },
       ...this.history.filter((item) => item.id !== task.id)
-    ].slice(0, 50);
+    ];
 
     saveHistoryRecords(this.history);
     this.broadcastState();

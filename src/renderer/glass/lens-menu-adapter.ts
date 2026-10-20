@@ -71,6 +71,18 @@ export function bindLensMenuPopover(instance: MenuHandle, { align = 'start', mat
   window.addEventListener('scroll', place, { signal, passive: true, capture: true });
   window.visualViewport?.addEventListener('resize', place, { signal, passive: true });
   window.visualViewport?.addEventListener('scroll', place, { signal, passive: true });
+  panel.addEventListener('mousedown', event => {
+    if (event.button !== 0 || event.defaultPrevented) return;
+    const item = event.target instanceof Element
+      ? event.target.closest<HTMLButtonElement>('button[role="menuitem"],button[role="option"]') : null;
+    if (!item || !panel.contains(item) || item.matches(':disabled')) return;
+    // During the browser's default mouse-focus transfer, the native factory's
+    // focusout microtask can observe BODY before the next item receives focus.
+    // Complete that same focus transfer synchronously, keeping blur events and
+    // the eventual click intact instead of dismissing the menu before mouseup.
+    event.preventDefault();
+    item.focus({ preventScroll: true });
+  }, { signal });
   panel.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
     event.preventDefault(); event.stopPropagation(); instance.close();

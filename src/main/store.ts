@@ -402,6 +402,6 @@ export const getHistoryRecords = (): HistoryRecord[] => {
 
 export const saveHistoryRecords = (history: HistoryRecord[]): void => {
   const store = readStore();
-  store.history = sortHistoryNewestFirst(history.map(normalizeHistoryRecord)).slice(0, 50);
+  store.history = sortHistoryNewestFirst(history.map(normalizeHistoryRecord));
   writeStore(store);
 };

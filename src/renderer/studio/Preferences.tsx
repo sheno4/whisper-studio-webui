@@ -14,12 +14,14 @@ import { formatDateTime, normalizeUiText, toCssFileUrl } from '../utils';
 import { PreferenceField, PreferenceGroup, PreferenceToggle } from './preferences/Fields';
 import ModelDownloads from './preferences/ModelDownloads';
 import TranslationEditor from './preferences/TranslationEditor';
-import { clearSubmittedKeys, createPreferencesDraft, engineModels, modelForEngine, preferencesIssue, type PreferenceCategory } from './preferences/draft';
+import { engineModels, modelForEngine, type PreferenceCategory } from './preferences/draft';
+import { usePreferencesSession, type PreferencesSession } from './preferences/usePreferencesSession';
 
 export interface PreferencesProps {
   workspace: WhisperWorkspaceController;
   onClose: () => void;
   appearance: ReturnType<typeof useAppearance>;
+  open: boolean;
 }
 
 const categories: Array<{ id: PreferenceCategory; label: string; description: string }> = [
@@ -37,41 +39,26 @@ const engines: Array<{ id: TranscriptionEngine; name: string; description: strin
 ];
 const themeChoices: Array<{ value: Appearance; label: string }> = [{ value: 'system', label: '系统配色' }, { value: 'light', label: '浅色' }, { value: 'dark', label: '深色' }];
 
-function PreferencesDialog({ workspace, onClose, appearance, settings }: PreferencesProps & { settings: SettingsData }): React.JSX.Element {
+function PreferencesDialog({ workspace, onClose, appearance, settings, session }: PreferencesProps & { settings: SettingsData; session: PreferencesSession }): React.JSX.Element {
   const glassCapability = useGlassCapability();
-  const [category, setCategory] = useState<PreferenceCategory>('general');
+  const { draft, category, setCategory, selectedService, setSelectedService, saving, picker, error, saved, dirty, busy, update, field, reset, save, pick, cancelPicker, setError } = session;
   const categoryContent = useContentTransition(category, category);
   const displayedCategory = categoryContent.displayedValue;
-  const [draft, setDraft] = useState(() => createPreferencesDraft(settings));
-  const [selectedService, setSelectedService] = useState<string | undefined>(settings.activeTranslationServiceId || settings.translationServices[0]?.id);
-  const [saving, setSaving] = useState(false);
-  const [picker, setPicker] = useState<'directory' | 'wallpaper'>();
-  const [error, setError] = useState('');
-  const [saved, setSaved] = useState(false);
-  const [discardPrompt, setDiscardPrompt] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
   const tabsRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const categoryPositions = useRef(new Map<PreferenceCategory, number>());
   const firstTabRef = useRef<HTMLButtonElement>(null);
-  const baseline = useRef(JSON.stringify(draft));
-  const savingLock = useRef(false);
-  const pickerLock = useRef(false);
   const [entryMotion] = useState(() => isKeyboardInteraction() ? 'instant' : 'pointer');
-  const dirty = JSON.stringify(draft) !== baseline.current;
-  const busy = saving || Boolean(picker);
   const currentCategory = categories.find((item) => item.id === displayedCategory)!;
   const runtimeChanged = draft.pythonPath !== settings.pythonPath || draft.transcriptionEngine !== settings.transcriptionEngine || draft.whisperModel !== settings.whisperModel;
 
   const requestClose = (): void => {
-    if (savingLock.current || pickerLock.current) return;
-    if (dirty) setDiscardPrompt(true);
-    else onClose();
+    cancelPicker();
+    onClose();
   };
-  useDialogInteraction(panelRef, { onDismiss: requestClose, canDismiss: !busy, initialFocusRef: firstTabRef });
+  useDialogInteraction(panelRef, { onDismiss: requestClose, initialFocusRef: firstTabRef });
 
-  const update = (next: SaveSettingsPayload): void => { setDraft(next); setSaved(false); setError(''); };
-  const field = <K extends keyof SaveSettingsPayload>(key: K, value: SaveSettingsPayload[K]): void => update({ ...draft, [key]: value });
   const chooseCategory = (next: PreferenceCategory): void => {
     if (next === category) return;
     if (scrollRef.current) categoryPositions.current.set(displayedCategory, scrollRef.current.scrollTop);
@@ -80,42 +67,6 @@ function PreferencesDialog({ workspace, onClose, appearance, settings }: Prefere
   useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = categoryPositions.current.get(displayedCategory) ?? 0;
   }, [displayedCategory]);
-
-  const save = async (): Promise<boolean> => {
-    if (savingLock.current || pickerLock.current) return false;
-    const issue = preferencesIssue(draft);
-    if (issue) {
-      chooseCategory(issue.category);
-      if (issue.serviceId) setSelectedService(issue.serviceId);
-      setError(issue.message);
-      return false;
-    }
-    savingLock.current = true;
-    setSaving(true);
-    setError('');
-    try {
-      await workspace.saveSettings(draft);
-      const next = clearSubmittedKeys(draft);
-      baseline.current = JSON.stringify(next);
-      setDraft(next);
-      setSaved(true);
-      setDiscardPrompt(false);
-      return true;
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '无法保存设置，请重试。'); return false; }
-    finally { savingLock.current = false; setSaving(false); }
-  };
-
-  const pick = async (kind: 'directory' | 'wallpaper'): Promise<void> => {
-    if (savingLock.current || pickerLock.current) return;
-    pickerLock.current = true;
-    setPicker(kind);
-    setError('');
-    try {
-      const result = kind === 'directory' ? await window.whisperWeb.pickDirectory() : await window.whisperWeb.pickWallpaperFile();
-      if (result) { setDraft((current) => ({ ...current, [kind === 'directory' ? 'outputDir' : 'wallpaperPath']: result })); setSaved(false); }
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '无法打开选择器。'); }
-    finally { pickerLock.current = false; setPicker(undefined); }
-  };
 
   const navigateCategories = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
     const target = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? (index + 1) % categories.length
@@ -176,16 +127,22 @@ function PreferencesDialog({ workspace, onClose, appearance, settings }: Prefere
 
   return <div className="prefs-backdrop" data-entry={entryMotion} onPointerDown={(event) => { if (event.currentTarget === event.target) requestClose(); }}>
     <GlassSurface aria-busy={busy} aria-describedby="prefs-description" aria-labelledby="prefs-title" aria-modal="true" className="prefs-dialog" ref={panelRef} role="dialog" tabIndex={-1}>
-      <header className="prefs-header"><div><small>WHISPER STUDIO</small><h2 id="prefs-title">设置</h2><p id="prefs-description">让工作台适合你的工作方式。</p></div><GlassButton aria-label="关闭设置" className="prefs-close" disabled={busy} onClick={requestClose} type="button"><Icon name="close" size={19} /></GlassButton></header>
-      <nav aria-label="设置分区" className="prefs-tabs" ref={tabsRef} role="tablist">{categories.map((item, index) => <button aria-controls={`prefs-panel-${item.id}`} aria-selected={category === item.id} className="lg-surface lg-button prefs-tab" data-glass="button" data-lg-drag="press" id={`prefs-tab-${item.id}`} key={item.id} onClick={() => chooseCategory(item.id)} onKeyDown={(event) => navigateCategories(event, index)} ref={index === 0 ? firstTabRef : undefined} role="tab" tabIndex={category === item.id ? 0 : -1} type="button">{item.label}</button>)}</nav>
+      <header className="prefs-header"><div><small>WHISPER STUDIO</small><h2 id="prefs-title">设置</h2><p id="prefs-description">让工作台适合你的工作方式。</p></div><GlassButton aria-label="关闭设置" className="prefs-close" onClick={requestClose} type="button"><Icon name="close" size={19} /></GlassButton></header>
+      <nav aria-label="设置分区" className="prefs-tabs" ref={tabsRef} role="tablist">{categories.map((item, index) => <button aria-controls={`prefs-panel-${item.id}`} aria-selected={category === item.id} className="lg-surface lg-button prefs-tab" data-glass="button" data-lg-drag="press" id={`prefs-tab-${item.id}`} key={item.id} onClick={() => chooseCategory(item.id)} onKeyDown={(event) => navigateCategories(event, index)} ref={category === item.id ? firstTabRef : undefined} role="tab" tabIndex={category === item.id ? 0 : -1} type="button">{item.label}</button>)}</nav>
       <div className="prefs-scroll" ref={scrollRef}><section aria-labelledby={`prefs-tab-${displayedCategory}`} className="lens-content-transition prefs-page" id={`prefs-panel-${displayedCategory}`} ref={categoryContent.contentRef} role="tabpanel"><header className="prefs-page-heading"><h3>{currentCategory.label}</h3><p>{currentCategory.description}</p></header><fieldset className="prefs-editing" disabled={busy}>{renderCategory()}</fieldset></section></div>
       <footer className="prefs-footer">
-        {discardPrompt ? <div className="prefs-discard" role="alert"><span><strong>有未保存的设置</strong><small>关闭后将丢弃这些更改。</small></span><button className="prefs-text-button" onClick={() => setDiscardPrompt(false)} type="button">继续编辑</button><GlassButton className="prefs-button prefs-danger" onClick={onClose} type="button">丢弃并关闭</GlassButton></div> : <><div aria-live="polite" className="prefs-save-status">{error ? <span className="prefs-error" role="alert">{error}</span> : <span>{saved && !dirty ? '设置已保存' : dirty ? '有未保存的更改' : '所有更改已保存'}</span>}<small>外观立即生效；其他配置保存后应用。</small></div><GlassButton className="prefs-button" disabled={busy} onClick={requestClose} type="button">关闭</GlassButton><GlassButton className="prefs-button prefs-button-primary" disabled={busy || !dirty} onClick={() => void save()} type="button">{saving ? '保存中…' : '应用设置'}</GlassButton></>}
+        <div aria-live="polite" className="prefs-save-status">{error ? <span className="prefs-error" role="alert">{error}</span> : <span>{saving ? '正在保存，可以先关闭' : saved && !dirty ? '设置已保存' : dirty ? '有尚未应用的更改' : '当前设置已生效'}</span>}<small>外观立即生效；未应用内容暂留在此页面，关闭后可继续编辑。</small></div>
+        <div className="prefs-footer-actions"><button className="prefs-text-button" disabled={busy || !dirty} onClick={reset} type="button">撤销更改</button><GlassButton className="prefs-button" onClick={requestClose} type="button">关闭</GlassButton><GlassButton className="prefs-button prefs-button-primary" disabled={busy || !dirty} onClick={() => void save()} type="button">{saving ? '保存中…' : '保存设置'}</GlassButton></div>
       </footer>
     </GlassSurface>
   </div>;
 }
 
-export default function Preferences(props: PreferencesProps): React.JSX.Element {
-  return props.workspace.snapshot ? <PreferencesDialog {...props} settings={props.workspace.snapshot.settings} /> : <></>;
+function PreferencesSessionController(props: PreferencesProps & { settings: SettingsData }): React.JSX.Element | null {
+  const session = usePreferencesSession(props.settings, props.workspace.saveSettings);
+  return props.open ? <PreferencesDialog {...props} session={session} /> : null;
+}
+
+export default function Preferences(props: PreferencesProps): React.JSX.Element | null {
+  return props.workspace.snapshot ? <PreferencesSessionController {...props} settings={props.workspace.snapshot.settings} /> : null;
 }

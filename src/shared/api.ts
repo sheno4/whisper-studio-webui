@@ -13,6 +13,7 @@ import type {
 
 export interface WhisperWebApi {
   getSnapshot: () => Promise<AppSnapshot>;
+  getHistoryResult: (historyId: string) => Promise<TaskRecord>;
   getSettings: () => Promise<SettingsData>;
   uploadFiles: (files: object[]) => Promise<string[]>;
   addLinkTasks: (links: string[], options?: CreateTaskOptions) => Promise<TaskRecord[]>;
@@ -25,7 +26,8 @@ export interface WhisperWebApi {
   openSourceLocation: (taskId: string) => Promise<boolean>;
   exportTaskFile: (
     taskId: string,
-    kind: ExportFileKind
+    kind: ExportFileKind,
+    source?: 'history'
   ) => Promise<boolean>;
   pickFiles: () => Promise<string[]>;
   pickWallpaperFile: () => Promise<string | null>;

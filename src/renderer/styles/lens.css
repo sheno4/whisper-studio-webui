@@ -1,3 +1,0 @@
-/* Preserve upstream styles while letting application layout and semantics win. */
-@import '../vendor/lens/tokens.css' layer(lens);
-@import '../vendor/lens/components.css' layer(lens);

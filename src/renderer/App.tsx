@@ -49,6 +49,22 @@ function App(): React.JSX.Element {
     window.history.replaceState(null, '', routeHash({ kind: 'history', id }));
   }
 
+  function viewContent(id: string, source: 'queue' | 'history'): void {
+    readingPositions.current.set(`${source}:${id}`, 0);
+    if (source === 'history') {
+      if (workspace.activity.view === 'history' && workspace.activity.selectedHistoryId === id && workspace.activity.historyResultError) workspace.reloadHistoryResult();
+      selectHistory(id);
+    } else selectTask(id);
+    // Menu close returns focus to its trigger. Move to the requested result
+    // after that synchronous close, without disturbing normal row selection.
+    queueMicrotask(() => {
+      readingScrollRef.current?.scrollTo({ top: 0, behavior: 'instant' });
+      const result = document.getElementById('workbench-result');
+      result?.focus({ preventScroll: true });
+      if (window.matchMedia('(max-width: 820px)').matches) result?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    });
+  }
+
   useEffect(() => {
     const selectFromLink = (): void => {
       const route = parseStudioRoute(window.location.hash);
@@ -135,8 +151,8 @@ function App(): React.JSX.Element {
           <ImportSheet workspace={workspace} variant="inline" />
         </GlassSurface>
         <GlassSurface className="lens-pane workbench-pane workbench-activity-pane" as="section" aria-labelledby="workbench-activity-heading">
-          {caption('任务与记录', 'workbench-activity-heading', '02')}
-          <ActivityRail workspace={workspace} onSelectTask={selectTask} onSelectHistory={selectHistory} />
+          {caption('任务记录', 'workbench-activity-heading', '02')}
+          <ActivityRail workspace={workspace} onSelectTask={selectTask} onSelectHistory={selectHistory} onViewContent={viewContent} />
         </GlassSurface>
         <GlassSurface className="lens-pane workbench-pane workbench-result-pane" as="section" id="workbench-result" aria-labelledby="workbench-result-heading" tabIndex={-1}>
           {caption('文字与文件', 'workbench-result-heading', '03')}
@@ -146,7 +162,7 @@ function App(): React.JSX.Element {
     </main>
     <footer className="studio-footer workbench-footer"><span>媒体与结果保存在本机</span><span><kbd>Alt</kbd> + <kbd>N</kbd> 添加媒体<span className="workbench-footer-separator">·</span><kbd>/</kbd> 搜索任务</span></footer>
     <nav className="workbench-mobile-jumps" aria-label="工作台定位"><a href="#workbench-import" onClick={(event) => { event.preventDefault(); focusImport(); }}>导入</a><a href="#workbench-activity-heading">任务</a><a href="#workbench-result" onClick={(event) => { event.preventDefault(); document.getElementById('workbench-result')?.scrollIntoView({ block: 'start' }); }}>结果</a></nav>
-    {workspace.settingsOpen && snapshot ? <Preferences workspace={workspace} appearance={appearance} onClose={() => workspace.setSettingsOpen(false)} /> : null}
+    {snapshot ? <Preferences open={workspace.settingsOpen} workspace={workspace} appearance={appearance} onClose={() => workspace.setSettingsOpen(false)} /> : null}
     {systemOpen && snapshot ? <SystemPanel workspace={workspace} onClose={() => setSystemOpen(false)} onPreferences={() => { setSystemOpen(false); workspace.setSettingsOpen(true); }} /> : null}
     {workspace.confirmation ? <Confirmation workspace={workspace} /> : null}
     {workspace.isDragging ? <div className="studio-drop" aria-live="polite"><GlassSurface className="studio-drop-card"><Icon name="upload" size={38} /><h2>松开，添加媒体</h2><p>使用当前的语言与翻译选项。</p></GlassSurface></div> : null}

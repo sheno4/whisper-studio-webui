@@ -273,6 +273,38 @@ export const createWebServer = (taskManager: TaskManager, options: WebServerOpti
     response.download(filePath, path.basename(filePath), { dotfiles: 'allow' });
   }));
 
+  app.get('/api/history/:historyId/result', asyncRoute(async (request, response) => {
+    const result = taskManager.getHistoryResult(routeParam(request, 'historyId'));
+    if (!result) {
+      response.status(404).json({ error: 'History result was not found.' });
+      return;
+    }
+    response.json(result);
+  }));
+
+  app.get('/api/history/:historyId/files/:kind', asyncRoute(async (request, response) => {
+    const kind = routeParam(request, 'kind') as ExportFileKind;
+    if (!exportKinds.has(kind)) {
+      response.status(400).json({ error: 'Unknown export file type.' });
+      return;
+    }
+    const filePath = taskManager.getHistoryFilePath(routeParam(request, 'historyId'), kind);
+    if (!filePath) {
+      response.status(404).json({ error: 'Export file was not found.' });
+      return;
+    }
+    try {
+      await fsPromises.access(filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT' || (error as NodeJS.ErrnoException).code === 'ENOTDIR') {
+        response.status(404).json({ error: 'Export file was not found.' });
+        return;
+      }
+      throw error;
+    }
+    response.download(filePath, path.basename(filePath), { dotfiles: 'allow' });
+  }));
+
   app.post('/api/reveal', asyncRoute(async (request, response) => {
     const targetPath = typeof request.body?.path === 'string' ? request.body.path : '';
     response.json({ ok: await taskManager.revealPath(targetPath) });

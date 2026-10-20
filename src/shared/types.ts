@@ -121,6 +121,7 @@ export interface HistoryRecord {
   id: string;
   displayName: string;
   sourceType: TaskSourceType;
+  input?: string;
   createdAt: string;
   finishedAt: string;
   status: Extract<TaskStatus, 'completed' | 'failed' | 'partial' | 'cancelled'>;

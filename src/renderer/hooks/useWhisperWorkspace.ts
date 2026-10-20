@@ -52,6 +52,8 @@ interface ActivityState {
   selectedHistoryRecord?: HistoryRecord;
   activeTask?: TaskRecord;
   activeHistoryRecord?: HistoryRecord;
+  historyResultLoading: boolean;
+  historyResultError?: string;
 }
 
 export interface WhisperWorkspaceController {
@@ -95,7 +97,8 @@ export interface WhisperWorkspaceController {
   revealPath: (targetPath: string) => Promise<void>;
   openOutputDirectory: (taskId: string) => Promise<void>;
   openSourceLocation: (taskId: string) => Promise<void>;
-  exportTaskFile: (taskId: string, kind: ExportFileKind) => Promise<void>;
+  exportTaskFile: (taskId: string, kind: ExportFileKind, source?: 'history') => Promise<void>;
+  reloadHistoryResult: () => void;
   reload: () => Promise<void>;
 }
 
@@ -116,7 +119,7 @@ function createFooterContent(
     return {
       context: '历史',
       title: getReadableName(selectedHistory),
-      message: selectedHistory.error ? normalizeUiText(selectedHistory.error) : '历史任务摘要与输出位置',
+      message: selectedHistory.error ? normalizeUiText(selectedHistory.error) : '查看完整任务结果',
       timestamp: formatDateTime(selectedHistory.finishedAt)
     };
   }
@@ -174,6 +177,9 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
     selectedHistoryRecord,
     activeTask,
     activeHistoryRecord,
+    historyResultLoading,
+    historyResultError,
+    reloadHistoryResult,
     setActivityView,
     setSelectedTaskId,
     setSelectedHistoryId,
@@ -343,7 +349,7 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
 
     setConfirmation({
       title: '清空历史记录？',
-      message: `将移除 ${snapshot.history.length} 条历史摘要，输出文件仍会保留在原目录。`,
+      message: `将移除 ${snapshot.history.length} 条历史记录，输出文件仍会保留在原目录。`,
       confirmLabel: '清空记录',
       tone: 'danger',
       action: async () => {
@@ -457,8 +463,8 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
   );
 
   const exportTaskFile = useCallback(
-    (taskId: string, kind: ExportFileKind): Promise<void> =>
-      runCommand('导出文件', () => window.whisperWeb.exportTaskFile(taskId, kind)),
+    (taskId: string, kind: ExportFileKind, source?: 'history'): Promise<void> =>
+      runCommand('导出文件', () => window.whisperWeb.exportTaskFile(taskId, kind, source)),
     [runCommand]
   );
 
@@ -482,7 +488,9 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
       selectedTask,
       selectedHistoryRecord,
       activeTask,
-      activeHistoryRecord
+      activeHistoryRecord,
+      historyResultLoading,
+      historyResultError
     },
     footer,
     settingsOpen,
@@ -519,6 +527,7 @@ export function useWhisperWorkspace(): WhisperWorkspaceController {
     openOutputDirectory,
     openSourceLocation,
     exportTaskFile,
+    reloadHistoryResult,
     reload
   };
 }

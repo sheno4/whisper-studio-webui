@@ -1,7 +1,0 @@
-{
-  "name": "@whisper-studio/lens-runtime",
-  "version": "1.1.0-showcase.1",
-  "private": true,
-  "type": "module",
-  "license": "MIT"
-}

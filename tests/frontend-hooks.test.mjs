@@ -15,7 +15,7 @@ const code = buildSync({
     ].join('\n'),
     resolveDir: fileURLToPath(new URL('..', import.meta.url))
   },
-  bundle: true, platform: 'node', format: 'cjs', external: ['react', 'framer-motion'], write: false
+  bundle: true, platform: 'node', format: 'cjs', external: ['react'], write: false
 }).outputFiles[0].text;
 
 const deferred = () => {
@@ -70,7 +70,6 @@ function mountHook(name, api, initialArgs = [], runtime = {}) {
       const jsx = (type, props) => ({ type, props });
       return { jsx, jsxs: jsx, Fragment: 'fragment' };
     }
-    if (id === 'framer-motion') return { motion: new Proxy({}, { get: (_, name) => name }) };
     assert.equal(id, 'react'); return react;
   }, window, crypto, console, URL, Error, navigator: {}, ...runtime });
   const flush = () => {
@@ -101,6 +100,54 @@ function workspaceApi(overrides = {}) {
     ...overrides
   };
 }
+
+const historySummary = (id, outputDir = `/results/${id}`) => ({ id, displayName: id, sourceType: 'link', createdAt: '2026-10-19T00:00:00Z', finishedAt: '2026-10-19T01:00:00Z', status: 'completed', outputDir });
+const finishedResult = (id, changes = {}) => ({ id, sourceType: 'link', input: `https://fixture.invalid/${id}`, displayName: id, status: 'completed', createdAt: '2026-10-19T00:00:00Z', updatedAt: '2026-10-19T01:00:00Z', progressMessage: '完成', attempts: 1, translateToChinese: true, downloadBehavior: 'transcribe', videoQuality: 'best', transcriptionLanguage: 'auto', transcriptText: `Original ${id}`, translationText: `译文 ${id}`, transcriptSegments: [{ id: 0, start: 0, end: 1, text: `Original ${id}` }], translationSegments: [{ id: 0, start: 0, end: 1, text: `译文 ${id}` }], outputDir: `/results/${id}`, outputFiles: { transcriptTxt: `/results/${id}/original.txt` }, logs: [{ timestamp: '2026-10-19T01:00:00Z', level: 'info', message: `Finished ${id}` }], ...changes });
+
+test('history loads full finished results without a live task and rejects late selection responses', async () => {
+  const first = deferred(), second = deferred(), refreshed = deferred();
+  const requests = [];
+  const snapshot = { ...emptySnapshot, history: [historySummary('A'), historySummary('B')] };
+  const hook = mountHook('useWorkspaceSelection', { getHistoryResult: id => { requests.push(id); return requests.length === 1 ? first.promise : requests.length === 2 ? second.promise : refreshed.promise; } }, [snapshot]);
+  hook.current.setActivityView('history');
+  assert.equal(hook.current.historyResultLoading, true);
+  hook.current.setSelectedHistoryId('B');
+  assert.equal(hook.current.activeTask, undefined);
+  first.resolve(finishedResult('A'));await hook.settle();
+  assert.equal(hook.current.activeTask, undefined, 'late A cannot appear while B loads');
+  second.resolve(finishedResult('B'));await hook.settle();
+  assert.equal(hook.current.activeTask.transcriptText, 'Original B');
+  assert.equal(hook.current.activeTask.translationText, '译文 B');
+  assert.equal(hook.current.activeTask.logs[0].message, 'Finished B');
+  hook.update({ ...snapshot, tasks: [finishedResult('B', { status: 'transcribing', updatedAt: '2026-10-19T02:00:00Z', transcriptText: 'New unfinished run' })] });
+  assert.equal(hook.current.activeTask.transcriptText, 'Original B', 'retry must not replace the finished history result');
+  hook.update({ ...snapshot, history: [historySummary('A'), historySummary('B', undefined)].map(record => record.id === 'B' ? { ...record, outputDir: undefined } : record) });
+  assert.equal(hook.current.activeTask, undefined, 'deleted output invalidates the old file cache immediately');
+  refreshed.resolve(finishedResult('B', { outputDir: undefined, outputFiles: {} }));await hook.settle();
+  assert.equal(hook.current.activeTask.outputDir, undefined);
+  assert.equal(Object.keys(hook.current.activeTask.outputFiles).length, 0);
+  assert.equal(hook.current.activeTask.transcriptText, 'Original B');
+  assert.deepEqual(requests, ['A', 'B', 'B']);
+  hook.dispose();
+});
+
+test('failed history reads can retry, while removed history cannot be revived by a late response', async () => {
+  const first = deferred(), second = deferred();
+  let calls = 0;
+  const snapshot = { ...emptySnapshot, history: [historySummary('A')] };
+  const hook = mountHook('useWorkspaceSelection', { getHistoryResult: () => ++calls === 1 ? first.promise : second.promise }, [snapshot]);
+  hook.current.setActivityView('history');assert.equal(hook.current.historyResultLoading, true);
+  first.reject(new Error('Fixture read failure'));await hook.settle();
+  assert.equal(hook.current.historyResultError, 'Fixture read failure');
+  assert.equal(hook.current.historyResultLoading, false);
+  hook.current.reloadHistoryResult();assert.equal(hook.current.historyResultLoading, true);
+  hook.update({ ...snapshot, history: [] });
+  second.resolve(finishedResult('A'));await hook.settle();
+  assert.equal(hook.current.activeTask, undefined);
+  assert.equal(hook.current.activeHistoryRecord, undefined);
+  assert.equal(hook.current.historyResultLoading, false);
+  hook.dispose();
+});
 
 test('saving settings from LAN HTTP succeeds without a secure-context randomUUID', async () => {
   let saved = 0;

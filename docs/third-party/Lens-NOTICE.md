@@ -1,26 +1,17 @@
 # Lens Design System
 
-Current frontend: the complete unmodified portable package is in
-`src/renderer/vendor/lens-native/` at commit
-`7a424c93b9be13cf835b91ea67495fec2ec0584e`, including its root MIT license,
-`SHA256SUMS` and `UPSTREAM.md`. Its actual runtime, shaders, components and CSS
-are active. The following older paths describe the previous extracted adapter.
-
 Copyright (c) 2026 DayDreamInAReverie. Licensed under MIT.
 
-Whisper Studio directly includes the Lens runtime from
+Whisper Studio includes the complete portable package from
 [ruiqichenbiec/design-systems](https://github.com/ruiqichenbiec/design-systems/tree/7a424c93b9be13cf835b91ea67495fec2ec0584e/lens/lab/design-system),
 commit `7a424c93b9be13cf835b91ea67495fec2ec0584e`, version `1.1.0-showcase.1`.
-The full [MIT license](../../src/renderer/vendor/lens/LICENSE) and
-[integration changes](../../src/renderer/vendor/lens/UPSTREAM.md) accompany the copied source.
 
-The active application uses Jelly physics, the shared surface binding, segmented
-control, extracted native switch, focus support and CSS tokens. React owns semantic
-controls and business callbacks; optical materials use the actual
-[rdev React component](Liquid-Glass-React-NOTICE.md).
+The unmodified package is in `src/renderer/vendor/lens-native/`, with the full
+[MIT license](../../src/renderer/vendor/lens-native/LICENSE),
+[source information](../../src/renderer/vendor/lens-native/UPSTREAM.md) and
+[integrity manifest](../../src/renderer/vendor/lens-native/SHA256SUMS).
 
-The upstream WebGL renderer and audio modules remain retained source but are not
-imported by the active motion-only runtime or included in the production bundle.
-There is no whole-page framebuffer, webpage raster or output-copy loop.
-
-The prior Kyant SVG adaptation has been removed from the active source.
+Its components, Jelly physics, WebGL renderer and styles are used by the current
+frontend. Application integration lives in `src/renderer/lens/` and
+`src/renderer/glass/`. The extracted Lens copy and retired mixed-material providers
+have been removed. See the [integration overview](../lens-native-rewrite.md).

@@ -13,6 +13,9 @@ interface WorkspaceSelectionController {
   selectedHistoryRecord?: HistoryRecord;
   activeTask?: TaskRecord;
   activeHistoryRecord?: HistoryRecord;
+  historyResultLoading: boolean;
+  historyResultError?: string;
+  reloadHistoryResult: () => void;
   setActivityView: (value: ActivityView) => void;
   setSelectedTaskId: (value: string) => void;
   setSelectedHistoryId: (value: string) => void;
@@ -24,6 +27,9 @@ export function useWorkspaceSelection(snapshot: AppSnapshot | null): WorkspaceSe
   const [selectedTaskId, setSelectedTaskId] = useState<string>();
   const [selectedHistoryId, setSelectedHistoryId] = useState<string>();
   const pendingCreatedTaskId = useRef<string | undefined>(undefined);
+  const results = useRef(new Map<string, TaskRecord>());
+  const [result, setResult] = useState<{ key: string; task?: TaskRecord; error?: string }>({ key: '' });
+  const [resultAttempt, setResultAttempt] = useState(0);
 
   useEffect(() => {
     if (pendingCreatedTaskId.current !== undefined && pendingCreatedTaskId.current === selectedTaskId) {
@@ -51,8 +57,44 @@ export function useWorkspaceSelection(snapshot: AppSnapshot | null): WorkspaceSe
   const selectedTask = snapshot?.tasks.find((task) => task.id === selectedTaskId);
   const selectedHistoryRecord = snapshot?.history.find((record) => record.id === selectedHistoryId);
   const selectedHistoryTask = snapshot?.tasks.find((task) => task.id === selectedHistoryId);
-  const activeTask = activityView === 'queue' ? selectedTask : selectedHistoryTask;
   const activeHistoryRecord = activityView === 'history' ? selectedHistoryRecord : undefined;
+  const historyKey = activeHistoryRecord ? JSON.stringify([activeHistoryRecord.id, activeHistoryRecord.finishedAt, activeHistoryRecord.status, activeHistoryRecord.outputDir, activeHistoryRecord.error]) : '';
+  // A retried task reuses its ID. History must retain the last finished result,
+  // rather than displaying that task's new, unfinished run.
+  const finishedLiveResult = activeHistoryRecord && selectedHistoryTask && !isTaskActive(selectedHistoryTask) && selectedHistoryTask.updatedAt === activeHistoryRecord.finishedAt ? selectedHistoryTask : undefined;
+  const historyTask = historyKey ? results.current.get(historyKey) ?? (result.key === historyKey ? result.task : undefined) ?? finishedLiveResult : undefined;
+  const historyResultError = !historyTask && result.key === historyKey ? result.error : undefined;
+  const historyResultLoading = Boolean(historyKey && !historyTask && !historyResultError);
+  const activeTask = activityView === 'queue' ? selectedTask : historyTask;
+
+  useEffect(() => {
+    if (!historyKey || !activeHistoryRecord) return;
+    const cached = results.current.get(historyKey);
+    if (cached) { setResult({ key: historyKey, task: cached }); return; }
+    let current = true;
+    setResult({ key: historyKey });
+    void window.whisperWeb.getHistoryResult(activeHistoryRecord.id).then(task => {
+      if (!current) return;
+      if (task.id !== activeHistoryRecord.id) throw new Error('读取到的结果与所选历史记录不一致，请重新读取。');
+      results.current.set(historyKey, task);
+      while (results.current.size > 8) results.current.delete(results.current.keys().next().value!);
+      setResult({ key: historyKey, task });
+    }).catch(cause => {
+      if (current) setResult({ key: historyKey, error: cause instanceof Error ? cause.message : '无法读取任务结果，请重试。' });
+    });
+    return () => { current = false; };
+  }, [historyKey, resultAttempt]);
+
+  useEffect(() => {
+    // Removed history entries must not survive in the local result cache.
+    const ids = new Set(snapshot?.history.map(record => record.id));
+    for (const [key, task] of results.current) if (!ids.has(task.id)) results.current.delete(key);
+  }, [snapshot?.history]);
+  const reloadHistoryResult = useCallback((): void => {
+    results.current.delete(historyKey);
+    setResult({ key: historyKey });
+    setResultAttempt(attempt => attempt + 1);
+  }, [historyKey]);
 
   const focusCreatedTasks = useCallback((created: TaskRecord[]): void => {
     setActivityView('queue');
@@ -70,6 +112,9 @@ export function useWorkspaceSelection(snapshot: AppSnapshot | null): WorkspaceSe
     selectedHistoryRecord,
     activeTask,
     activeHistoryRecord,
+    historyResultLoading,
+    historyResultError,
+    reloadHistoryResult,
     setActivityView,
     setSelectedTaskId,
     setSelectedHistoryId,

@@ -16,8 +16,6 @@
     "src/server/**/*",
     "src/main/environment.ts",
     "src/main/logger.ts",
-    "src/main/ollama.ts",
-    "src/main/openai.ts",
     "src/main/paths.ts",
     "src/main/process.ts",
     "src/main/store.ts",

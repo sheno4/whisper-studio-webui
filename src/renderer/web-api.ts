@@ -194,6 +194,7 @@ const disconnectEventsIfUnused = (): void => {
 const api: WhisperWebApi = {
   getSnapshot: () => request('/api/snapshot'),
   getSettings: () => request('/api/settings'),
+  getHistoryResult: (id) => request(`/api/history/${encodeURIComponent(id)}/result`),
   uploadFiles,
   addLinkTasks: (links, options) => request('/api/tasks/links', {
     method: 'POST',
@@ -209,13 +210,13 @@ const api: WhisperWebApi = {
   deleteTaskDirectory: async (taskId) => (await request<{ ok: boolean }>(`/api/tasks/${taskId}/output`, { method: 'DELETE' })).ok,
   openOutputDir: async (taskId) => (await request<{ ok: boolean }>(`/api/tasks/${taskId}/open-output`, { method: 'POST' })).ok,
   openSourceLocation: async (taskId) => (await request<{ ok: boolean }>(`/api/tasks/${taskId}/open-source`, { method: 'POST' })).ok,
-  exportTaskFile: async (taskId, kind) => {
+  exportTaskFile: async (taskId, kind, source) => {
     await ensureSession();
     const headers = new Headers();
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
     }
-    const response = await fetch(apiUrl(`/api/tasks/${taskId}/files/${kind}`), {
+    const response = await fetch(apiUrl(`/api/${source === 'history' ? 'history' : 'tasks'}/${encodeURIComponent(taskId)}/files/${kind}`), {
       credentials: 'same-origin',
       headers
     });

@@ -1,7 +1,7 @@
 import type {GlassRenderer, RendererOptions} from '../vendor/lens-native/index.js';
 import {chooseRenderQuality, nextRenderPixelLimit, type RenderQuality} from './render-quality';
 
-export type NativeGeometry = {el: HTMLElement; opacity: number; x: number; y: number; w: number; h: number; inverse: number[]; clip: {left: number; right: number; bottom: number; top: number}};
+export type NativeGeometry = {el: HTMLElement; kind: string; opacity: number; x: number; y: number; w: number; h: number; inverse: number[]; clip: {left: number; right: number; bottom: number; top: number}};
 export type NativeProgram = {p: WebGLProgram; uniforms: Record<string, WebGLUniformLocation | null>};
 
 /** Pinned-private allocation/coordinate boundary. Native shaders, lens geometry,
@@ -95,7 +95,7 @@ export function adaptViewportRenderer(renderer: NativeRenderer, stage: HTMLEleme
   }};
   qualityControls.set(renderer, qualityControl);
   const nativeReadGeometry = renderer.readGeometry;
-  renderer.readGeometry = function() {
+  const readGeometry = function(this: NativeRenderer) {
     const descriptor = Object.getOwnPropertyDescriptor(stage, 'getBoundingClientRect');
     const rect = viewport();
     // Only the native routine's stage origin changes; actual element DOMRects,
@@ -107,14 +107,20 @@ export function adaptViewportRenderer(renderer: NativeRenderer, stage: HTMLEleme
       else Reflect.deleteProperty(stage, 'getBoundingClientRect');
     }
   };
+  renderer.readGeometry = readGeometry;
 
-  renderer.resize = function() {
+  const nativeResize = renderer.resize, nativeRender = renderer.render;
+  let viewportDirty = true, rendering = false;
+  const applyViewportSize = function(this: NativeRenderer) {
     if (this.destroyed || this.suspended || this.lost || !this.gl || this.gl.isContextLost()) return;
     if (allocationFailed) {queueMicrotask(() => {if (!destroyed && !this.destroyed) this.suspendGPU();}); return;}
     const rect = viewport(), stageRect = rectForStage();
     // Absolute positioning follows the visible slice without creating a full
     // document texture or relying on fixed-containing-block behavior.
-    Object.assign(canvas.style, {inset: 'auto', left: `${rect.left - stageRect.left}px`, top: `${rect.top - stageRect.top}px`, width: `${rect.width}px`, height: `${rect.height}px`});
+    const style = {right: 'auto', bottom: 'auto', left: `${rect.left - stageRect.left}px`, top: `${rect.top - stageRect.top}px`, width: `${rect.width}px`, height: `${rect.height}px`};
+    for (const [key, value] of Object.entries(style)) {
+      if (canvas.style.getPropertyValue(key) !== value) canvas.style.setProperty(key, value);
+    }
     const gl = this.gl;
     if (limits?.gl !== gl || limits.texture !== this.targets[0]?.texture) {
       const viewportLimits = gl.getParameter(gl.MAX_VIEWPORT_DIMS) as Int32Array;
@@ -134,12 +140,15 @@ export function adaptViewportRenderer(renderer: NativeRenderer, stage: HTMLEleme
       const sameDpr = dpr === this.dpr;
       if (sameSize && sameDpr) {qualityControl.quality = quality; diagnostic(quality); return;}
       try {
-        // Release the old full-size checkpoint/copies before growing or retrying
-        // the shared scene, so a previous size cannot keep memory under pressure.
-        for (const release of qualityControl.beforeAllocation) release();
         // Drain earlier unrelated GL errors before checking this allocation.
         for (let count = 0; count < 8 && gl.getError() !== gl.NO_ERROR; count++);
-        canvas.width = width; canvas.height = height;
+        if (!sameSize) {
+          // Keep the existing frame and overlays when browser zoom changes only
+          // CSS density. Assigning even an equal canvas dimension clears it.
+          for (const release of qualityControl.beforeAllocation) release();
+          if (canvas.width !== width) canvas.width = width;
+          if (canvas.height !== height) canvas.height = height;
+        }
         if (gl.isContextLost()) return;
         // Some browsers grant a drawing buffer smaller than the canvas request.
         // Keep geometry, source textures and copied output on that same size.
@@ -154,11 +163,13 @@ export function adaptViewportRenderer(renderer: NativeRenderer, stage: HTMLEleme
           continue;
         }
         this.width = width; this.height = height; this.dpr = dpr;
-        for (const target of this.targets) {
-          gl.bindTexture(gl.TEXTURE_2D, target.texture);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-          gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
-          if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE || gl.getError() !== gl.NO_ERROR) throw new Error('Lens viewport target allocation failed');
+        if (!sameSize) {
+          for (const target of this.targets) {
+            gl.bindTexture(gl.TEXTURE_2D, target.texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+            if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE || gl.getError() !== gl.NO_ERROR) throw new Error('Lens viewport target allocation failed');
+          }
         }
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         this.setScene(this.settings.scene);
@@ -192,9 +203,42 @@ export function adaptViewportRenderer(renderer: NativeRenderer, stage: HTMLEleme
     }
   };
 
-  let frame = 0;
-  const refresh = () => {frame = 0; renderer.resize(); renderer.invalidate();};
-  const schedule = () => {if (!frame) frame = requestAnimationFrame(refresh);};
+  const resize = function(this: NativeRenderer) {
+    viewportDirty = true;
+    // A top-layer allocation can request lower shared quality while native
+    // render is in progress. Its own continuation must remain the only ticker.
+    if (rendering) {this.rectDirty = true; return;}
+    // initGL resets both dimensions before native startup reads them to place
+    // its initial pointer. Runtime observers must leave the last frame intact.
+    if (!this.width || !this.height) {
+      viewportDirty = false;
+      applyViewportSize.call(this);
+    } else this.invalidate();
+  };
+  const render = function(this: NativeRenderer, now: number) {
+    if (viewportDirty) {
+      viewportDirty = false;
+      // ResizeObserver runs after RAF callbacks. Allocate here instead, directly
+      // before drawing, so a cleared backing store can never reach that paint.
+      applyViewportSize.call(this);
+      // setScene may have invalidated a direct render call. Retain only the
+      // native loop's next frame, rather than leaving a second ticker behind.
+      cancelAnimationFrame(this.frame);
+      this.frame = 0;
+    }
+    rendering = true;
+    try {
+      if (!allocationFailed && this.width && this.height && !this.gl?.isContextLost()) nativeRender.call(this, now);
+      else this.frame = 0;
+    } finally {
+      rendering = false;
+      if (viewportDirty && !this.frame) this.invalidate();
+    }
+  };
+  renderer.resize = resize;
+  renderer.render = render;
+  const refresh = () => {if (!destroyed) renderer.resize();};
+  const schedule = refresh;
   let resolutionQuery: MediaQueryList | undefined;
   const watchResolution = () => {
     resolutionQuery?.removeEventListener('change', resolutionChanged);
@@ -217,7 +261,9 @@ export function adaptViewportRenderer(renderer: NativeRenderer, stage: HTMLEleme
   return {refresh, viewport, destroy() {
     destroyed = true; qualityControls.delete(renderer);
     qualityControl.beforeAllocation.clear(); resolutionQuery?.removeEventListener('change', resolutionChanged);
-    cancelAnimationFrame(frame);
+    if (renderer.resize === resize) renderer.resize = nativeResize;
+    if (renderer.render === render) renderer.render = nativeRender;
+    if (renderer.readGeometry === readGeometry) renderer.readGeometry = nativeReadGeometry;
     stage.removeEventListener('pointermove', pointer);
     window.removeEventListener('scroll', schedule, true);
     window.removeEventListener('resize', schedule);
