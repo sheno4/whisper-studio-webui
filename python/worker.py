@@ -76,6 +76,7 @@ class WorkerFailure(Exception):
     code: str
     message: str
     details: str | None = None
+    youtube_auth_attempted: bool = False
 
     def __str__(self) -> str:
         return self.message
@@ -530,6 +531,71 @@ def is_youtube_url(url: str) -> bool:
     return any(hostname == domain or hostname.endswith("." + domain) for domain in ("youtube.com", "youtu.be"))
 
 
+def youtube_auth_gate_kind(text: str) -> str | None:
+    """Recognize actual YouTube access gates, not generic cookie/network errors."""
+    lowered = text.lower().replace("’", "'")
+    if any(marker in lowered for marker in (
+        "members-only", "members only", "membership required", "join this channel",
+        "only available to members", "available to this channel's members",
+    )):
+        return "membership"
+    if any(marker in lowered for marker in (
+        "confirm your age", "this video is age-restricted", "this video is age restricted",
+        "this video may be inappropriate for some users",
+    )):
+        return "age"
+    if "confirm you're not a bot" in lowered or "confirm you are not a bot" in lowered:
+        return "bot"
+    if any(marker in lowered for marker in (
+        "login required", "log in to", "sign in to", "sign-in required",
+        "authentication required", "requires authentication", "please sign in",
+        "private video. sign in",
+    )):
+        return "login"
+    return None
+
+
+def youtube_error_details(error: Exception) -> str:
+    """yt-dlp may wrap the useful cookie/network error in an exception chain."""
+    messages: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        messages.append(str(current) or type(current).__name__)
+        current = current.__cause__ or current.__context__
+    return "\n".join(messages)
+
+
+def classify_youtube_error(error: Exception) -> WorkerFailure:
+    if isinstance(error, WorkerFailure):
+        return error
+    text = youtube_error_details(error)
+    lowered = text.lower()
+    gate = youtube_auth_gate_kind(text)
+    if gate == "membership":
+        return WorkerFailure("membership_required", "此 YouTube 视频需要频道会员权限，请确认所选登录账号有权播放。", text)
+    if gate == "age":
+        return WorkerFailure("youtube_age_restricted", "此 YouTube 视频需要登录并完成年龄验证，请选择有权播放的登录来源。", text)
+    if gate == "bot":
+        return WorkerFailure("youtube_bot_check", "YouTube 要求登录确认访问者身份，请选择登录来源或更换网络后重试。", text)
+    if gate == "login":
+        return WorkerFailure("auth_required", "此 YouTube 视频要求登录，请选择有权播放的登录来源。", text)
+    if "ffmpeg" in lowered and ("not found" in lowered or "no such file" in lowered):
+        return WorkerFailure("ffmpeg_missing", "没有检测到 ffmpeg，无法提取音频或处理下载结果。", text)
+    if "ssl" in lowered and "eof" in lowered:
+        return WorkerFailure("ssl_eof", "网络连接中断（SSL EOF）。请稍后重试，或更换网络后再试。", text)
+    if any(marker in lowered for marker in ("timed out", "timeout", "network", "connection", "unable to download")) and "403" not in lowered:
+        return WorkerFailure("network_error", "YouTube 下载时网络异常，请检查网络连接后重试。", text)
+    if "403" in lowered or "forbidden" in lowered:
+        return WorkerFailure("youtube_access_blocked", "YouTube 拒绝了本次访问（403），请稍后重试或更换网络。", text)
+    if any(marker in lowered for marker in ("requested format is not available", "no video formats", "no formats found")):
+        return WorkerFailure("format_unavailable", "YouTube 没有返回所选画质的可用媒体格式，请尝试其他画质。", text)
+    if "video unavailable" in lowered or "not available" in lowered:
+        return WorkerFailure("link_unavailable", "这个 YouTube 链接当前不可用，可能已失效、被删除或仅限特定地区访问。", text)
+    return WorkerFailure("youtube_extract_failed", "YouTube 视频解析或下载失败，请查看详细错误。", text)
+
+
 def youtube_login_candidates(source: str, profile: str, project_root: str) -> list[tuple[str, dict[str, Any]]]:
     """Prefer Firefox's installed default profile; never export browser cookies to disk."""
     if source not in {"auto", "firefox", "chrome", "file", "none"}:
@@ -541,14 +607,19 @@ def youtube_login_candidates(source: str, profile: str, project_root: str) -> li
         profiles: list[str | None] = [profile] if profile else []
         root = Path(os.environ.get("APPDATA", "")) / "Mozilla" / "Firefox"
         if not profiles and (root / "profiles.ini").is_file():
-            config = configparser.ConfigParser(interpolation=None)
-            config.read(root / "profiles.ini", encoding="utf-8")
-            paths = [config[s].get("Default", "") for s in config.sections() if s.startswith("Install")]
-            paths += [config[s].get("Path", "") for s in config.sections() if s.startswith("Profile")]
-            for value in paths:
-                path = root / value
-                if value and (path / "cookies.sqlite").is_file() and str(path) not in profiles:
-                    profiles.append(str(path))
+            try:
+                config = configparser.ConfigParser(interpolation=None)
+                config.read(root / "profiles.ini", encoding="utf-8")
+                paths = [config[s].get("Default", "") for s in config.sections() if s.startswith("Install")]
+                paths += [config[s].get("Path", "") for s in config.sections() if s.startswith("Profile")]
+                for value in paths:
+                    path = root / value
+                    if value and (path / "cookies.sqlite").is_file() and str(path) not in profiles:
+                        profiles.append(str(path))
+            except (configparser.Error, OSError, UnicodeError) as error:
+                if source != "auto":
+                    raise
+                log("warning", f"Firefox 配置读取失败，将继续检查其他登录来源：{error}", "yt-dlp")
         for index, value in enumerate(profiles or [None]):
             candidates.append((f"Firefox {index + 1}", {"cookiesfrombrowser": ("firefox", value, None, None)}))
     if source in {"auto", "chrome"}:
@@ -558,21 +629,69 @@ def youtube_login_candidates(source: str, profile: str, project_root: str) -> li
         if not cookie_file.is_file():
             fail("youtube_cookies_missing", "项目目录中没有 cookies.txt，请选择已登录的 Firefox 或 Chrome。")
         candidates.append(("cookies.txt", {"cookiefile": str(cookie_file)}))
-    if source in {"auto", "none"}:
-        candidates.append(("未登录", {}))
     return candidates
 
 
 def probe_youtube_session(url: str, options: dict[str, Any], source: str, profile: str, project_root: str):
     import yt_dlp
+
+    # Even an explicitly selected source is a fallback. Public videos must not
+    # enumerate browser profiles, check cookie files, or load account cookies.
+    anonymous_options = {key: value for key, value in options.items() if key not in {"cookiefile", "cookiesfrombrowser"}}
+    log("info", "正在免登录解析 YouTube 视频", "yt-dlp")
+    gate_error: Exception
+    try:
+        with yt_dlp.YoutubeDL({**anonymous_options, "socket_timeout": 20, "retries": 1}) as downloader:
+            info = downloader.extract_info(url, download=False)
+            if not info:
+                raise ValueError("没有获得视频信息")
+            return info, None
+    except Exception as error:
+        if not youtube_auth_gate_kind(youtube_error_details(error)):
+            raise classify_youtube_error(error) from error
+        gate_error = error
+    # Leave the anonymous exception handler first, so a later network failure
+    # does not inherit the access gate as unrelated exception context.
+    try:
+        return probe_youtube_authenticated_session(url, anonymous_options, source, profile, project_root, gate_error)
+    except WorkerFailure as failure:
+        failure.youtube_auth_attempted = source != "none"
+        raise
+
+
+def probe_youtube_authenticated_session(
+    url: str, options: dict[str, Any], source: str, profile: str, project_root: str, gate_error: Exception
+):
+    import yt_dlp
     from yt_dlp.cookies import load_cookies
 
-    errors: list[str] = []
-    for label, auth in youtube_login_candidates(source, profile, project_root):
+    if source == "none":
+        raise classify_youtube_error(gate_error) from gate_error
+
+    errors: list[str] = [f"未登录: {youtube_error_details(gate_error)}"]
+    last_gate = gate_error
+    cookie_error: Exception | None = None
+    authenticated_gate_seen = False
+    authenticated_options = {key: value for key, value in options.items() if key not in {"cookiefile", "cookiesfrombrowser"}}
+    try:
+        candidates = youtube_login_candidates(source, profile, project_root)
+    except Exception as error:
+        failure = error if isinstance(error, WorkerFailure) else WorkerFailure(
+            "youtube_cookies_unavailable", "无法检查所选 YouTube 登录来源，请查看详细错误。"
+        )
+        failure.details = "\n".join(errors + [youtube_error_details(error)])
+        raise failure from error
+    for label, auth in candidates:
         log("info", f"正在使用 {label} 解析 YouTube 视频", "yt-dlp")
         try:
-            with yt_dlp.YoutubeDL({**options, "socket_timeout": 20, "retries": 1}) as downloader:
-                jar = load_cookies(auth.get("cookiefile"), auth.get("cookiesfrombrowser"), downloader)
+            with yt_dlp.YoutubeDL({**authenticated_options, "socket_timeout": 20, "retries": 1}) as downloader:
+                try:
+                    jar = load_cookies(auth.get("cookiefile"), auth.get("cookiesfrombrowser"), downloader)
+                except Exception as error:
+                    cookie_error = error
+                    errors.append(f"{label} Cookie 读取失败: {youtube_error_details(error)}")
+                    log("warning", f"{label} Cookie 读取失败，正在检查下一登录来源", "yt-dlp")
+                    continue
                 # Only YouTube/Google cookies participate in this YouTube session.
                 for cookie in list(jar):
                     domain = cookie.domain.lstrip(".").lower()
@@ -587,9 +706,19 @@ def probe_youtube_session(url: str, options: dict[str, Any], source: str, profil
                 log("info", f"YouTube 已使用 {label} 完成解析，下载将复用此登录状态", "yt-dlp")
                 return info, jar
         except Exception as error:
-            errors.append(f"{label}: {error}")
+            errors.append(f"{label}: {youtube_error_details(error)}")
+            if not youtube_auth_gate_kind(youtube_error_details(error)):
+                failure = classify_youtube_error(error)
+                failure.details = "\n".join(errors)
+                raise failure from error
+            last_gate = error
+            authenticated_gate_seen = True
             log("warning", f"{label} 未能解析视频，正在检查下一登录来源", "yt-dlp")
-    fail("youtube_login_failed", "YouTube 视频解析失败。请确认所选浏览器能播放此视频，登录账号具有对应会员等级。Windows 下建议使用 Firefox；Chrome 的 Cookie 可能被占用或加密保护。", "\n".join(errors))
+    if cookie_error is not None and not authenticated_gate_seen:
+        fail("youtube_cookies_unavailable", "无法读取所选 YouTube 登录来源的 Cookie，请查看详细错误或选择其他登录来源。", "\n".join(errors))
+    failure = classify_youtube_error(last_gate)
+    failure.details = "\n".join(errors)
+    raise failure from last_gate
 
 
 def build_site_http_headers(url: str) -> dict[str, str]:
@@ -2035,7 +2164,12 @@ def download_media(
         mark_progress(latest_status_message)
         progress("downloading", latest_status_message, 3)
     except Exception as error:
-        if is_youtube_url(url):
+        if is_youtube_url(url) and isinstance(error, WorkerFailure) and (
+            error.youtube_auth_attempted or error.code in {
+                "membership_required", "youtube_age_restricted", "youtube_bot_check", "auth_required",
+                "youtube_cookies_missing", "youtube_cookies_unavailable", "youtube_login_invalid",
+            }
+        ):
             raise
 
         latest_status_message = summarize_remote_media(url, None, download_behavior, video_quality)
@@ -2044,7 +2178,18 @@ def download_media(
         progress("downloading", latest_status_message, 2)
 
     last_error: Exception | None = None
-    for attempt in range(1, 4):
+    youtube_auth_attempted = youtube_cookiejar is not None
+    youtube_auth_error: Exception | None = None
+    attempt = 1
+    while attempt <= 3:
+        if youtube_auth_error is not None:
+            preview_info, youtube_cookiejar = probe_youtube_authenticated_session(
+                url, preview_options, youtube_cookie_source, youtube_browser_profile, project_root, youtube_auth_error
+            )
+            youtube_auth_error = None
+            transfer_progress = DownloadProgressTracker(preview_info)
+            mark_progress("已取得 YouTube 登录状态，正在重试下载")
+            progress("downloading", latest_status_message, 3)
         try:
             heartbeat_started_at = time.monotonic()
             heartbeat_stop.clear()
@@ -2097,16 +2242,23 @@ def download_media(
             heartbeat_stop.set()
             last_error = error
 
-            if is_youtube_url(url) and is_auth_gate_error_message(str(error)):
-                fail("youtube_session_expired", "YouTube 登录状态已失效或会员权限不足，请在所选浏览器确认可以播放后重试。", str(error))
+            if is_youtube_url(url) and youtube_auth_gate_kind(youtube_error_details(error)):
+                if youtube_auth_attempted:
+                    raise classify_youtube_error(error) from error
+                youtube_auth_attempted = True
+                youtube_auth_error = error
+                continue
 
             if attempt >= 3:
                 break
 
             log("warning", f"下载失败，准备重试（{attempt}/3）：{error}")
             progress("downloading", f"下载失败，正在重试（{attempt}/3）", 0)
+            attempt += 1
 
     assert last_error is not None
+    if is_youtube_url(url):
+        raise classify_youtube_error(last_error) from last_error
     raise last_error
 
 

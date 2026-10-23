@@ -181,15 +181,19 @@ npm run setup -- --with-faster-cuda
 
 可配置多套服务、独立密钥、提示词、请求频率、分段长度和 Temperature，并在保存前测试连接。通过界面保存的密钥使用本机密钥加密。
 
-### YouTube 会员视频
+### YouTube 公开视频与会员视频
+
+公开视频默认先匿名下载，无需登录，也不会先读取浏览器 Cookie。网络超时、媒体 403、视频失效等错误会分别说明，不会统一提示“会员权限不足”。只有视频明确要求账号、年龄验证或站点登录验证时，才尝试配置的登录来源。
 
 1. 在 Firefox 或 Chrome 中登录有对应会员权限的账号，确认能播放目标视频。
-2. 打开 **设置 → 文件与默认行为 → YouTube 登录来源**。
+2. 打开 **设置 → 下载 → YouTube 账号（按需使用）**。
 3. 保持自动选择，或指定浏览器、配置目录、Netscape 格式的 `cookies.txt`。
 
-Windows 下建议使用 Firefox；Chrome 的 Cookie 可能受系统加密保护或浏览器占用影响。自动模式优先尝试 Firefox，再检查 Chrome、已有 Cookie 文件，最后尝试公开访问。
+需要登录时，Windows 下可优先选择 Firefox；Chrome 的 Cookie 可能受系统加密保护或浏览器占用影响。自动模式先尝试匿名访问；遇到明确的身份验证要求后，才依次尝试 Firefox、Chrome 和已有 Cookie 文件。
 
 浏览器登录信息仅在内存中使用，并限制为 YouTube/Google 域名；会员权限失败后不会转发到匿名第三方下载站。账号须具备对应内容的观看权限。
+
+选择 **不使用登录状态** 会始终匿名；即使选择了某个浏览器或 `cookies.txt`，公开视频匿名成功时也不会读取它。[yt-dlp 官方说明](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies)同样将账号用于需要访问权限的内容。
 
 ### 抖音与其他站点
 
